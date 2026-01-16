@@ -2,9 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
-#include <cJSON.h>
+#include "cJSON.h"
 
 //FILE* output_file = NULL;
+
 
 struct task {
     char* title;
@@ -13,8 +14,31 @@ struct task {
 		int depth;
 };
 
+typedef struct {
+	struct task* world;
+	cJSON* progress;
+} GameWorld;
 
+GameWorld* load_game_state();
+size_t element_length(const struct task* element);
+void element_destroy(struct task* element);
+struct task* element_last(struct task* element);
+struct task* create_node_from_title(const char* title);
+struct task* load_from_file(char* filename);
+char* read_file(const char* filename);
+void sync_node(struct task* node, cJSON* territories);
+void calculate_kingdoms_town(struct task* kingdom, int* town, int* villages);
+void save_game(GameWorld* gw);
 
+//расчет колво элементов
+size_t element_length(const struct task* element){
+        size_t count = 0;
+        while(element != NULL){
+                count++;
+                element = element->next;
+        }
+        return count;
+}
 
 // уничтожение рекурсией
 void element_destroy(struct task* element){
@@ -40,6 +64,7 @@ struct task* element_last(struct task* element){
                 }
                 element = element->next;
         }
+				return NULL;
 }
 
 
@@ -159,7 +184,7 @@ char* read_file(const char* filename){
 
 	// Читаем всё содержимое
 	size_t bytes_read = fread(buffer, 1, size, fp);
-  fclose(file);
+  fclose(fp);
 
 	// если колво символов меньше чем задано, то отмена
 	if(bytes_read != size){
@@ -173,14 +198,15 @@ char* read_file(const char* filename){
 }
 
 void sync_node(struct task* node, cJSON* territories){
-	if(!node){
-		printf("Не правильная ссылка на мир\n");
-		return;
-	}
+	if(!node) return;
+
 
 	cJSON* existing = cJSON_GetObjectItem(territories, node->title);
 	if(!existing){
-		cJSON* new_odj = cJSON_CreateObject();
+		cJSON* new_obj = cJSON_CreateObject();
+		int town = 0;
+		int villages = 0;
+		calculate_kingdoms_town(node, &town, &villages);
 
 		//общие поля
 		cJSON_AddStringToObject(new_obj, "status", "not_captured");
@@ -190,9 +216,9 @@ void sync_node(struct task* node, cJSON* territories){
 
 		if(node->depth == 0){
 			cJSON_AddStringToObject(new_obj, "view", "KINGDOM");
-			cJSON_AddNumberToObject(new_obj, "all_count_town", 0);
+			cJSON_AddNumberToObject(new_obj, "all_count_town", town);
 			cJSON_AddNumberToObject(new_obj, "all_captured_town", 0);
-			cJSON_AddNumberToObject(new_obj, "all_count_village", 0);
+			cJSON_AddNumberToObject(new_obj, "all_count_village", villages);
 			cJSON_AddNumberToObject(new_obj, "all_captured_village", 0);
 			cJSON_AddBoolToObject(new_obj, "multiple_rebellion_kingdom", 0);
 			cJSON_AddNumberToObject(new_obj, "all_stages", 0);
@@ -220,48 +246,88 @@ void sync_node(struct task* node, cJSON* territories){
 		sync_node(node->next, territories);
 }
 
+void calculate_kingdoms_town(struct task* kingdom, int* town, int* villages){
+	// на всякий случай
+	*villages = 0;
+	*town = 0;
 
-int main(){
-	struct task* world = load_from_file("world.km");
-	if (!world) {
-    fprintf(stderr, "Не удалось загрузить world.km\n");
-    return 1;
+	if(!kingdom){
+		printf("Неправильная ссылка на королевство\n");
+		return;
+	}
+	// создаем отправную точку
+	struct task* temp = kingdom->child;
+	// считаем количество городов через функцию (которая считает вбок)
+	*town = (int)element_length(kingdom->child);
+	while(temp){
+		// считаем детей каждого города
+		*villages += (int)element_length(temp->child);
+		// перемещаем отправную точку - указатель
+		temp = temp->next;
 	}
 	
-	// преобразуем json в текст
+}
+
+GameWorld* load_game_state(){
+	GameWorld* all_world = (GameWorld*)malloc(sizeof(GameWorld));
+	if(!all_world){
+		printf("Не удалось выделить память под структуру GameWorld\n");
+		return NULL;
+	}
+	all_world->world = load_from_file("world.km");
+	if(!all_world->world){
+		printf("Не удалось загрузить world.km\n");
+		return NULL;
+	}
 	char* json_text = read_file("progress.json");
-	cJSON* progress = NULL;
-		
-	// если все ок, парсим 
+	all_world->progress = NULL;
+
 	if(json_text){
-		progress = cJSON_Parse(json_text);
+		all_world->progress = cJSON_Parse(json_text);
 		free(json_text);
 	}
-
-	// если файла нет - создаем пустой
-	if(!progress){
-		progress = cJSON_CreateObject();
-		cJSON_AddItemToObject(progress, "territories", cJSON_CreateObject());
+	
+	if(!all_world->progress){
+		all_world->progress = cJSON_CreateObject();
+		cJSON_AddItemToObject(all_world->progress, "territories", cJSON_CreateObject());
 	}
 
-	cJSON* territories = cJSON_GetObjectItem(progress, "territories");
+	cJSON* territories = cJSON_GetObjectItem(all_world->progress, "territories");
 	if(!territories){
 		territories = cJSON_CreateObject();
-		cJSON_AddItemToObject(progress, "territories", territories);
+		cJSON_AddItemToObject(all_world->progress, "territories", territories);
 	}
-	sync_node(world, territories);
+	sync_node(all_world->world, territories);
 
-	// Сохраняем обновлённый JSON
-	char* output = cJSON_Print(progress);
-  FILE* f = fopen("progress.json", "w");
-  if (f) {
-    fwrite(output, 1, strlen(output), f);
-    fclose(f);
-  }
-  free(output);
-  cJSON_Delete(progress);
-  element_destroy(world);
+  return all_world;
+}
 
+void save_game(GameWorld* gw){
+	// переносим в текстовый массив
+	char* output = cJSON_Print(gw->progress);
+	// если все норм то открываем файл и записываем в него
+	if(output){
+		FILE* fp = fopen("progress.json", "w");
+		if(fp){
+			fwrite(output, 1, strlen(output), fp);
+			fclose(fp);
+		}
+		free(output);
+	}
+	// все удаляем
+	cJSON_Delete(gw->progress);
+	element_destroy(gw->world);
+	free(gw);
+}
+
+int main(){
+	GameWorld* gw = load_game_state();
+	if (!gw) {
+    fprintf(stderr, "Ошибка загрузки\n");
+    return 1;
+	}
+	printf("Готово.\n");
+	save_game(gw);
 
 	return 0;
 }

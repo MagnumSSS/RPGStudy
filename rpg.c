@@ -3,6 +3,8 @@
 #include <string.h>
 #include <inttypes.h>
 #include "cJSON.h"
+#include <time.h>
+
 
 //FILE* output_file = NULL;
 
@@ -29,6 +31,66 @@ char* read_file(const char* filename);
 void sync_node(struct task* node, cJSON* territories);
 void calculate_kingdoms_town(struct task* kingdom, int* town, int* villages);
 void save_game(GameWorld* gw);
+struct task* find_by_title(struct task* node, const char* title); 
+
+/// 2 ///
+
+// функция времени
+char* get_current_date() {
+    time_t now = time(NULL);
+    struct tm* local = localtime(&now);
+    static char date[11];  // "YYYY-MM-DD\0" → 11 байт
+    strftime(date, sizeof(date), "%Y-%m-%d", local);
+    return date;
+}
+
+// обработчик команды study 
+void handle_study(GameWorld* gw, const char* title){
+	if(!gw || !title){
+		printf("Одна из ссылок обработчика study пришла невалидна\n");
+		return;
+	}
+
+	struct task* capture = find_by_title(gw->world, title);
+	if(!capture){
+		printf("Такой объект не найден\n");
+		return;
+	}
+	if (capture->depth != 2) {
+    printf("Можно захватывать только улицы/сёла!\n");
+    return;
+	}
+
+	cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
+	if(!territories){
+		printf("Неправильная ссылка territories в обработчике study\n");
+		return;
+	}
+	cJSON* street_obj = cJSON_GetObjectItem(territories, capture->title);
+	if(!street_obj){
+		printf("Неправильная ссылка street_obj в обработчике study\n");
+		return;
+	}
+
+	cJSON_ReplaceItemInObject(street_obj, "status", cJSON_CreateString("captured"));
+
+	cJSON_ReplaceItemInObject(street_obj, "date_captured", cJSON_CreateString(get_current_date()));
+}
+
+//функция нахождения элемента по имени через рекурсию
+struct task* find_by_title(struct task* node, const char* title) {
+    if (!node) return NULL;
+    if (strcmp(node->title, title) == 0) {
+        return node;
+    }
+    // Ищем в детях
+    struct task* child_result = find_by_title(node->child, title);
+    if (child_result) return child_result;
+    // Ищем в соседях
+    return find_by_title(node->next, title);
+}
+
+/// 1 ///
 
 //расчет колво элементов
 size_t element_length(const struct task* element){
@@ -320,13 +382,29 @@ void save_game(GameWorld* gw){
 	free(gw);
 }
 
-int main(){
+int main(int argc, char* argv[]){
 	GameWorld* gw = load_game_state();
 	if (!gw) {
     fprintf(stderr, "Ошибка загрузки\n");
     return 1;
 	}
-	printf("Готово.\n");
+	
+	if(argc < 2){
+		printf("Введите полную команду\n");
+		return 1;
+	}
+
+	if(strcmp(argv[1], "study") == 0){
+		if(argc < 3){
+			printf("Укажите название села/улицы\n");
+		}
+		else{
+			handle_study(gw, argv[2]);
+		}
+	} else {
+		printf("Неизвестная команда!\n");
+	}
+
 	save_game(gw);
 
 	return 0;

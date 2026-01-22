@@ -35,6 +35,25 @@ struct task* find_by_title(struct task* node, const char* title);
 
 /// 2 ///
 
+struct task* find_parent(struct task* node, const char* title){
+	if(!node || !title){
+		printf("Не удалось прочитать struct task* и title в find_parent");
+		return NULL;
+	}
+	struct task* node_child = node->child;
+	while(node_child){
+		if(strcmp(node_child->title, title)){
+			return node;
+		}
+		node_child = child->next;
+	}
+	
+	struct task* res = find_parent(node->child, title);
+	if(res) return res;
+	return find_parent(node->next, title);
+}
+
+
 // функция времени
 char* get_current_date() {
     time_t now = time(NULL);

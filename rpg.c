@@ -45,7 +45,7 @@ struct task* find_parent(struct task* node, const char* title){
 		if(strcmp(node_child->title, title)){
 			return node;
 		}
-		node_child = child->next;
+		node_child = node_child->next;
 	}
 	
 	struct task* res = find_parent(node->child, title);
@@ -63,37 +63,59 @@ char* get_current_date() {
     return date;
 }
 
-// обработчик команды study 
-void handle_study(GameWorld* gw, const char* title){
-	if(!gw || !title){
-		printf("Одна из ссылок обработчика study пришла невалидна\n");
+void log_text_in_file(char* title){
+	int fd = open("history.log", O_WRONLY | O_CREAT | O_APPEND, 644);
+	if(fd == -1){
+		printf("Не удалось открыть или создать файл history.log\n");
+		perror("open");
 		return;
 	}
-
-	struct task* capture = find_by_title(gw->world, title);
-	if(!capture){
-		printf("Такой объект не найден\n");
+	char* time = get_current_date();
+	if(!time){
+		printf("Не удалось получить время в log_text_in_file\n");
+		close(fd);
 		return;
 	}
-	if (capture->depth != 2) {
-    printf("Можно захватывать только улицы/сёла!\n");
-    return;
-	}
-
-	cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
-	if(!territories){
-		printf("Неправильная ссылка territories в обработчике study\n");
+	size_t len = strlen(title);
+	ssize_t n = write(fd, title, len);
+	ssize_t n2 = write(fd, " | ", 3);
+	ssize_t n_date = write(fd, , 10);
+	if(n != (ssize_t)len || n_date != 10 || n2 != 3){
+		printf("Не удалось записать в лог файл\n");
+		perror("write");
+		close(fd);
 		return;
 	}
-	cJSON* street_obj = cJSON_GetObjectItem(territories, capture->title);
-	if(!street_obj){
-		printf("Неправильная ссылка street_obj в обработчике study\n");
-		return;
+	write(fd, "\n", 1);
+	close(fd);
+}
+
+void handle_push(GameWorld* gw, char* flag, char* text_push, char* title){
+	if(!text_push){
+		printf("Текст Пуша не найден\n");
+	}
+	log_text_in_file(text_push);
+
+	if(!flag){
+		//ничего не делаем - обычный пуш
+		return;	
 	}
 
-	cJSON_ReplaceItemInObject(street_obj, "status", cJSON_CreateString("captured"));
+	else if(strcmp(flag, "-t") == 0){
+		if(!title){
+			printf("Для флага -t нужно указать город/cело\n");
+			return;
+		}
+		// обработчик пуша с -t
+	}
+	else if(strcmp(flag, "-c") == 0){
+		if(!title){
+			printf("Для флага -c нужно указать дату события[dd-mm-YYYY]\n");
+			return;
+		}
+		// обработчик пуша с -c
+	}
 
-	cJSON_ReplaceItemInObject(street_obj, "date_captured", cJSON_CreateString(get_current_date()));
 }
 
 //функция нахождения элемента по имени через рекурсию
@@ -278,76 +300,69 @@ char* read_file(const char* filename){
 	return buffer;
 }
 
-void sync_node(struct task* node, cJSON* territories){
-	if(!node) return;
+void sync_node(struct task* node, cJSON* territories) {
+    if (!node) return;
 
+    cJSON* existing = cJSON_GetObjectItem(territories, node->title);
+    if (!existing) { 
+        cJSON* obj = cJSON_CreateObject();
+				
+        // Базовые поля для всех
+				// статус города - захвачен и т.д
+        cJSON_AddStringToObject(obj, "status", "not_captured");
+				// дата захвата
+        cJSON_AddStringToObject(obj, "date_captured", "");
+				// дата мятежа 
+        cJSON_AddStringToObject(obj, "date_rebellion", "");
+				// время захвата 
+        cJSON_AddNumberToObject(obj, "time_captured", 0);
+				// очки опыта после пуша
+        cJSON_AddNumberToObject(obj, "xp", 0);
+				// уровень статуса
+        cJSON_AddNumberToObject(obj, "level", 0);
+				// очки подготовки к захвату(только к незахваченному d)
+        cJSON_AddNumberToObject(obj, "prep_points", 0);
 
-	cJSON* existing = cJSON_GetObjectItem(territories, node->title);
-	if(!existing){
-		cJSON* new_obj = cJSON_CreateObject();
-		int town = 0;
-		int villages = 0;
-		calculate_kingdoms_town(node, &town, &villages);
+        // Установка view и all_stages по depth
+        if (node->depth == 0) {
+						// вид обьекта
+            cJSON_AddStringToObject(obj, "view", "KINGDOM");
+						// минимум очков 
+            cJSON_AddNumberToObject(obj, "count_scores", 12); // сложнее захватывать
 
-		//общие поля
-		cJSON_AddStringToObject(new_obj, "status", "not_captured");
-		cJSON_AddStringToObject(new_obj, "date_captured", "");
-		cJSON_AddStringToObject(new_obj, "date_rebellion", "");
-		cJSON_AddNumberToObject(new_obj, "time_captured", 0);
+            // Поля королевства
+						// колво городов
+            cJSON_AddNumberToObject(obj, "all_count_town", element_length(node->child));
+						// колво захваченных городов
+            cJSON_AddNumberToObject(obj, "captured_towns", 0);
+						// общее колво захваченных деревней
+            cJSON_AddNumberToObject(obj, "total_captured_villages", 0);
+						// статус национального мятежа
+            cJSON_AddBoolToObject(obj, "multiple_rebellion_kingdom", 0);
 
-		if(node->depth == 0){
-			cJSON_AddStringToObject(new_obj, "view", "KINGDOM");
-			cJSON_AddNumberToObject(new_obj, "all_count_town", town);
-			cJSON_AddNumberToObject(new_obj, "all_captured_town", 0);
-			cJSON_AddNumberToObject(new_obj, "all_count_village", villages);
-			cJSON_AddNumberToObject(new_obj, "all_captured_village", 0);
-			cJSON_AddBoolToObject(new_obj, "multiple_rebellion_kingdom", 0);
-			cJSON_AddNumberToObject(new_obj, "all_stages", 0);
-			cJSON_AddNumberToObject(new_obj, "count_stages", 0);
-			cJSON_AddBoolToObject(new_obj, "multiple_rebellion_town", 0);
-			cJSON_AddItemToObject(territories, node->title, new_obj);
-			printf("Добавлен новый объект: %s\n", node->title);
-		}
-		else if(node->depth == 1){	
-			cJSON_AddNumberToObject(new_obj, "all_stages", 0);
-			cJSON_AddNumberToObject(new_obj, "count_stages", 0);
-			cJSON_AddBoolToObject(new_obj, "multiple_rebellion_town", 0);
-			cJSON_AddStringToObject(new_obj, "view", "TOWN");
-			cJSON_AddItemToObject(territories, node->title, new_obj);
-			printf("Добавлен новый объект: %s\n", node->title);
-		}
-		else if(node->depth == 2){	
-			cJSON_AddStringToObject(new_obj, "view", "VILLAGE");
-			cJSON_AddItemToObject(territories, node->title, new_obj);
-			printf("Добавлен новый объект: %s\n", node->title);
-		}
+        } else if (node->depth == 1) {
+						
+            cJSON_AddStringToObject(obj, "view", "TOWN");
+            cJSON_AddNumberToObject(obj, "count_scores", 8);
 
-	}
-		sync_node(node->child, territories);
-		sync_node(node->next, territories);
+            // Поля города
+            cJSON_AddNumberToObject(obj, "all_count_village", element_length(node->child));
+            cJSON_AddNumberToObject(obj, "captured_villages", 0);
+            cJSON_AddBoolToObject(obj, "multiple_rebellion_town", 0);
+
+        } else if (node->depth == 2) {
+            cJSON_AddStringToObject(obj, "view", "VILLAGE");
+            cJSON_AddNumberToObject(obj, "count_scores", 5); // проще всего
+        }
+
+        cJSON_AddItemToObject(territories, node->title, obj);
+        printf("Добавлен: %s\n", node->title);
+    }
+
+    sync_node(node->child, territories);
+    sync_node(node->next, territories);
 }
 
-void calculate_kingdoms_town(struct task* kingdom, int* town, int* villages){
-	// на всякий случай
-	*villages = 0;
-	*town = 0;
-
-	if(!kingdom){
-		printf("Неправильная ссылка на королевство\n");
-		return;
-	}
-	// создаем отправную точку
-	struct task* temp = kingdom->child;
-	// считаем количество городов через функцию (которая считает вбок)
-	*town = (int)element_length(kingdom->child);
-	while(temp){
-		// считаем детей каждого города
-		*villages += (int)element_length(temp->child);
-		// перемещаем отправную точку - указатель
-		temp = temp->next;
-	}
-	
-}
 
 GameWorld* load_game_state(){
 	GameWorld* all_world = (GameWorld*)malloc(sizeof(GameWorld));
@@ -407,7 +422,7 @@ int main(int argc, char* argv[]){
     fprintf(stderr, "Ошибка загрузки\n");
     return 1;
 	}
-	
+	/*
 	if(argc < 2){
 		printf("Введите полную команду\n");
 		return 1;
@@ -423,7 +438,7 @@ int main(int argc, char* argv[]){
 	} else {
 		printf("Неизвестная команда!\n");
 	}
-
+	*/
 	save_game(gw);
 
 	return 0;

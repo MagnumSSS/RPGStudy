@@ -63,7 +63,8 @@ char* get_current_date() {
     return date;
 }
 
-void log_text_in_file(char* title){
+
+void log_text_in_file(char* text_push, char* title){
 	int fd = open("history.log", O_WRONLY | O_CREAT | O_APPEND, 644);
 	if(fd == -1){
 		printf("Не удалось открыть или создать файл history.log\n");
@@ -76,25 +77,177 @@ void log_text_in_file(char* title){
 		close(fd);
 		return;
 	}
-	size_t len = strlen(title);
-	ssize_t n = write(fd, title, len);
-	ssize_t n2 = write(fd, " | ", 3);
-	ssize_t n_date = write(fd, , 10);
-	if(n != (ssize_t)len || n_date != 10 || n2 != 3){
-		printf("Не удалось записать в лог файл\n");
-		perror("write");
-		close(fd);
+	if(title){
+		dprintf(fd, "%s | %s | %s \n", time, text_push, title);
+	} else {
+		dprintf(fd, "%s | %s \n", time, text_push);
+	}
+	close(fd);
+}
+
+// одна из функций что возвращает значение int поля с проверкой
+int get_int_field(cJSON* obj, char* title_obj){
+	cJSON* item = cJSON_GetObjectItem(obj, title_obj);
+	if(item && cJSON_IsNumber(item)){
+		return (int)item->valuedouble;
+	}
+	else{
+		printf("Не удалось получить поле элемента %s\n", title_obj);
+		return -1;
+	}
+}
+
+// одна из функций что возвращает значение string поля с проверкой
+char* get_string_field(cJSON* obj, char* title_obj){
+	cJSON* item = cJSON_GetObjectItem(obj, title_obj);
+	if(item && cJSON_IsString(item)){
+		return item->valuestring;
+	}
+	else{
+		printf("Не удалось получить поле элемента %s\n", title_obj);
+		return NULL;
+	}
+}
+
+// обработчик для событий когда статус == "not captured" 
+void handle_prep(cJSON* obj, GameWorld* gw, char* title){
+	if(!obj){
+		printf("Не удалось получить обьект в handle_prep\n");
 		return;
 	}
-	write(fd, "\n", 1);
-	close(fd);
+	int prep_scores = get_int_field(obj, "prep_points");
+	if(prep_scores == -1){
+		return;
+	}
+	int count_scores = get_int_field(obj, "count_scores");
+	if(count_scores == -1 || count_scores == 0){
+		return;
+	}
+
+	if(prep_scores >= count_scores){
+		cJSON_ReplaceItemInObject(obj, "status", cJSON_CreateString("captured"));
+		struct task* parent = find_parent(gw->world, title);
+		if(!parent){
+			printf("Не удалось найти родителя\n");
+			return;
+		}
+		cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
+		if(!territories){
+			printf("Не удалось взять поле territories в handle_grep\n");
+			return;
+		}
+		cJSON* parent_item = cJSON_GetObjectItem(territories, parent->title);
+		if(!parent_item){
+			printf("Не удалось найти родителя в json\n");
+			return;
+		}
+		if(parent->depth == 1){
+			int captured = get_int_field(parent_item, "captured_villages");
+			if(captured == -1){
+				printf("Не удалось получить количество captured_villages\n");
+				return;
+			}
+			captured++;
+			cJSON_ReplaceItemInObject(parent_item, "captured_villages", cJSON_CreateNumber(captured));
+			
+			struct task* kingdom = find_parent(gw->world, parent->title);
+				if (kingdom && kingdom->depth == 0) {
+					cJSON* kingdom_item = cJSON_GetObjectItem(territories, kingdom->title);
+					if (kingdom_item) {
+            int total = get_int_field(kingdom_item, "total_captured_villages");
+            if (total != -1) {
+                cJSON_ReplaceItemInObject(kingdom_item, "total_captured_villages", 
+                cJSON_CreateNumber(total + 1));
+            }
+					}
+				}
+		}
+		else if(parent->depth == 0){
+			int captured = get_int_field(parent_item, "captured_towns");
+			if(captured == -1){
+				printf("Не удалось получить количество captured_villages\n");
+				return;
+			}
+			captured++;
+			cJSON_ReplaceItemInObject(parent_item, "captured_towns", cJSON_CreateNumber(captured));
+		}
+	}
+	else {
+		prep_scores++;
+		cJSON_ReplaceItemInObject(obj, "prep_points", cJSON_CreateNumber(prep_scores));
+		
+	}
+}
+
+// обработчик для событий когда статус == "captured"
+void handle_xp(cJSON* obj){
+	if(!obj){
+		printf("Не удалось получить обьект в handle_xp\n");
+		return;
+	}
+
+	int xp = get_int_field(obj, "xp");
+	int level = get_int_field(obj, "level");
+
+	xp++;
+	int new_level = xp / 5;
+	cJSON_ReplaceItemInObject(obj, "xp", cJSON_CreateNumber(xp));
+	cJSON_ReplaceItemInObject(obj, "level", cJSON_CreateNumber(new_level));
+	if(new_level == 1){
+		cJSON_ReplaceItemInObject(obj, "status", cJSON_CreateString("researcher"));
+	}
+	else if(new_level == 2){
+		cJSON_ReplaceItemInObject(obj, "status", cJSON_CreateString("expert"));
+	}
+	else if(new_level == 3){
+		cJSON_ReplaceItemInObject(obj, "status", cJSON_CreateString("master"));
+	}
+	else if(new_level == 4){
+		cJSON_ReplaceItemInObject(obj, "status", cJSON_CreateString("arcmage"));
+	}
+	else if(new_level >= 5){
+		cJSON_ReplaceItemInObject(obj, "status", cJSON_CreateString("teacher"));
+	}
+}
+
+// главная функция обработчик push -t
+void handle_push_t(GameWorld* gw, char* title){
+	// достаем одну большую структуру территории
+	cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
+	if(!territories){
+		printf("Не удалось записать территорию\n");
+		return;
+	}
+	// достаем обьект dn
+	cJSON* obj = cJSON_GetObjectItem(territories, title);
+	if(!obj){
+		printf("Не удалось найти элемент в json структуре\n");
+		return;
+	}
+
+	// достаем статус - именно от него и зависит условие, что увеличивать
+	char* status_item = get_string_field(obj, "status");
+	if(!status_item){
+		return;
+	}
+	
+	// если "не захват" увеличиваем очки захвата, когда будет ==, обьект обязательно захватился
+	if(strcmp(status_item, "not_captured") == 0){
+		handle_prep(obj); // готова, не обработаны ошибки
+	}
+	// если "захват" увеличиваем очки опыта, когда будет достигнут определенный уровень, меняем статус
+	else{
+		handle_xp(obj); // готова, не обработаны ошибки
+	}
+
 }
 
 void handle_push(GameWorld* gw, char* flag, char* text_push, char* title){
 	if(!text_push){
 		printf("Текст Пуша не найден\n");
-	}
-	log_text_in_file(text_push);
+	} 
+
+	log_text_in_file(text_push, title);
 
 	if(!flag){
 		//ничего не делаем - обычный пуш
@@ -106,7 +259,7 @@ void handle_push(GameWorld* gw, char* flag, char* text_push, char* title){
 			printf("Для флага -t нужно указать город/cело\n");
 			return;
 		}
-		// обработчик пуша с -t
+		handle_push_t(gw, title);
 	}
 	else if(strcmp(flag, "-c") == 0){
 		if(!title){

@@ -4,7 +4,9 @@
 #include <inttypes.h>
 #include "cJSON.h"
 #include <time.h>
-
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 //FILE* output_file = NULL;
 
@@ -35,22 +37,39 @@ struct task* find_by_title(struct task* node, const char* title);
 
 /// 2 ///
 
-struct task* find_parent(struct task* node, const char* title){
-	if(!node || !title){
+struct task* find_parent(struct task* world, const char* child_title){
+	if(!world || !child_title){
 		printf("Не удалось прочитать struct task* и title в find_parent");
 		return NULL;
 	}
-	struct task* node_child = node->child;
-	while(node_child){
-		if(strcmp(node_child->title, title)){
-			return node;
-		}
-		node_child = node_child->next;
-	}
 	
-	struct task* res = find_parent(node->child, title);
-	if(res) return res;
-	return find_parent(node->next, title);
+	struct task* kingdom = world;
+	// для удобства называем kingdom
+	while(kingdom){
+		// в теории след дитя должно быть городом
+		struct task* town = kingdom->child;
+		while(town){
+			// тут та же теория город->дитя
+			struct task* village = town->child;
+			while(village){
+				// проверяем имя дитя, если да возвращаем его родителя
+				if(strcmp(village->title, child_title) == 0){
+					return town;
+				}
+				// перемещаемся по городам
+				village = village->next;
+			}
+			// а если теория не работает и дитя - город
+			if(strcmp(town->title, child_title) == 0){
+				return kingdom;
+			}
+			// перемещаемся по городам
+			town = town->next;
+		}
+		// перемещаемся по странам
+		kingdom = kingdom->next;
+	}
+	return NULL;
 }
 
 
@@ -65,7 +84,7 @@ char* get_current_date() {
 
 
 void log_text_in_file(char* text_push, char* title){
-	int fd = open("history.log", O_WRONLY | O_CREAT | O_APPEND, 644);
+	int fd = open("history.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
 	if(fd == -1){
 		printf("Не удалось открыть или создать файл history.log\n");
 		perror("open");
@@ -123,7 +142,8 @@ void handle_prep(cJSON* obj, GameWorld* gw, char* title){
 	if(count_scores == -1 || count_scores == 0){
 		return;
 	}
-
+	
+	prep_scores++;
 	if(prep_scores >= count_scores){
 		cJSON_ReplaceItemInObject(obj, "status", cJSON_CreateString("captured"));
 		struct task* parent = find_parent(gw->world, title);
@@ -141,6 +161,12 @@ void handle_prep(cJSON* obj, GameWorld* gw, char* title){
 			printf("Не удалось найти родителя в json\n");
 			return;
 		}
+		// После cJSON* parent_item = ...
+		printf("🔍 Обновление родителя:\n");
+		printf("  - Ребёнок: '%s'\n", title);
+		printf("  - Родитель найден: '%s' (depth=%d)\n", parent->title, parent->depth);
+		printf("  - Родитель в JSON: %s\n", parent_item ? "да" : "НЕТ!");
+
 		if(parent->depth == 1){
 			int captured = get_int_field(parent_item, "captured_villages");
 			if(captured == -1){
@@ -173,7 +199,6 @@ void handle_prep(cJSON* obj, GameWorld* gw, char* title){
 		}
 	}
 	else {
-		prep_scores++;
 		cJSON_ReplaceItemInObject(obj, "prep_points", cJSON_CreateNumber(prep_scores));
 		
 	}
@@ -187,7 +212,7 @@ void handle_xp(cJSON* obj){
 	}
 
 	int xp = get_int_field(obj, "xp");
-	int level = get_int_field(obj, "level");
+	//int level = get_int_field(obj, "level");
 
 	xp++;
 	int new_level = xp / 5;
@@ -233,7 +258,7 @@ void handle_push_t(GameWorld* gw, char* title){
 	
 	// если "не захват" увеличиваем очки захвата, когда будет ==, обьект обязательно захватился
 	if(strcmp(status_item, "not_captured") == 0){
-		handle_prep(obj); // готова, не обработаны ошибки
+		handle_prep(obj, gw, title); // готова, не обработаны ошибки
 	}
 	// если "захват" увеличиваем очки опыта, когда будет достигнут определенный уровень, меняем статус
 	else{
@@ -259,7 +284,9 @@ void handle_push(GameWorld* gw, char* flag, char* text_push, char* title){
 			printf("Для флага -t нужно указать город/cело\n");
 			return;
 		}
+		//printf("Сработала заглушка для -t\n");
 		handle_push_t(gw, title);
+		printf("Сработала функция для -t\n");
 	}
 	else if(strcmp(flag, "-c") == 0){
 		if(!title){
@@ -267,6 +294,7 @@ void handle_push(GameWorld* gw, char* flag, char* text_push, char* title){
 			return;
 		}
 		// обработчик пуша с -c
+		printf("Сработала заглушка для -c\n");
 	}
 
 }
@@ -575,12 +603,14 @@ int main(int argc, char* argv[]){
     fprintf(stderr, "Ошибка загрузки\n");
     return 1;
 	}
-	/*
+	
 	if(argc < 2){
 		printf("Введите полную команду\n");
 		return 1;
 	}
 
+
+	/*
 	if(strcmp(argv[1], "study") == 0){
 		if(argc < 3){
 			printf("Укажите название села/улицы\n");
@@ -592,6 +622,17 @@ int main(int argc, char* argv[]){
 		printf("Неизвестная команда!\n");
 	}
 	*/
+	//handle_push(GameWorld* gw, char* flag, char* text_push, char* title)
+	if(argc == 3 && strcmp(argv[1], "push") == 0){
+		handle_push(gw, NULL, argv[2], NULL);		
+	}
+	else if(argc == 5 && strcmp(argv[1], "push") == 0 && (strcmp(argv[2], "-t") == 0 || strcmp(argv[2], "-c") == 0)){
+		handle_push(gw, argv[2], argv[3], argv[4]);
+	}
+	else if(argc == 2 && strcmp(argv[1], "--init") == 0){
+		save_game(gw);
+		return 0;
+	}
 	save_game(gw);
 
 	return 0;

@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 //FILE* output_file = NULL;
 
@@ -104,6 +105,17 @@ void log_text_in_file(char* text_push, char* title){
 	close(fd);
 }
 
+// для этих функций сигна всегда одна - сам объект и его поле
+bool get_bool_field(cJSON* obj, char* title_obj){
+	cJSON* item = cJSON_GetObjectItem(obj, title_obj);
+	if(item && cJSON_IsBool(item)){
+		return cJSON_IsTrue(item);
+	}
+	else {
+		return false;
+	}
+}
+
 // одна из функций что возвращает значение int поля с проверкой
 int get_int_field(cJSON* obj, char* title_obj){
 	cJSON* item = cJSON_GetObjectItem(obj, title_obj);
@@ -128,6 +140,38 @@ char* get_string_field(cJSON* obj, char* title_obj){
 	}
 }
 
+// функция мятежа
+bool schedule_rebellion(cJSON* obj, struct task* node){
+	if(!obj || !node){
+		printf("Не получилось получить obj и node в start_rebellion\n");
+		return false;
+	}
+	
+	// проверяем есть ли уже мятеж
+	cJSON* data_reb = cJSON_GetObjectItem(obj, "data_rebellion");
+	if(data_reb && strlen(data_reb->valuestring) > 0){
+		return false;
+	}
+	
+	// вычисляем время: сейчас, через сколько дней, окончательная дата
+	time_t now = time(NULL);
+	int days = (node->depth==2) ? (3 + rand() % 5) : (5 + rand() % 6);
+	time_t rebellion_time = now + days * 24 * 3600;
+
+	char date_str[11];
+	strftime(date_str, sizeof(date_str), "%Y-%m-%d", localtime(&rebellion_time));
+	
+	// добавляем отдельные поля
+	cJSON_ReplaceItemInObject(obj, "date_rebellion", cJSON_CreateString(date_str));
+	cJSON_AddNumberToObject(obj, "rebellion_pushes_needed", 2 + rand() % 3);
+	cJSON_AddBoolToObject(obj, "is_in_rebellion", 1);
+	cJSON_AddNumberToObject(obj, "rebellion_pushes_done", 0);
+
+	return true;
+}
+
+
+
 // обработчик для событий когда статус == "not captured" 
 void handle_prep(cJSON* obj, GameWorld* gw, char* title){
 	if(!obj){
@@ -146,6 +190,13 @@ void handle_prep(cJSON* obj, GameWorld* gw, char* title){
 	prep_scores++;
 	if(prep_scores >= count_scores){
 		cJSON_ReplaceItemInObject(obj, "status", cJSON_CreateString("captured"));
+
+		// старт мятежа через n-дней
+		struct task* object_node = find_by_title(gw->world, title);
+		if(schedule_rebellion(obj, object_node)){
+			printf("Скоро начнется мятеж\n");
+		}
+
 		struct task* parent = find_parent(gw->world, title);
 		if(!parent){
 			printf("Не удалось найти родителя\n");
@@ -200,7 +251,34 @@ void handle_prep(cJSON* obj, GameWorld* gw, char* title){
 	}
 	else {
 		cJSON_ReplaceItemInObject(obj, "prep_points", cJSON_CreateNumber(prep_scores));
-		
+	}
+}
+
+// обработчик событий когда у объекта мятеж
+void handle_rebellion(cJSON* obj){
+	if(!obj){
+		printf("Не удалось получить обьект в handle_rebellion\n");
+		return;
+	}
+	int pushes_needed = get_int_field(obj, "rebellion_pushes_needed");
+	if(pushes_needed == -1){
+		return;
+	}
+	int pushes_done =  get_int_field(obj, "rebellion_pushes_done");
+	if(pushes_done == -1){
+		pushes_done = 0;
+	}
+
+	pushes_done++;
+	if(pushes_done >= pushes_needed){
+		printf("Вы смогли успокоить народ\n");
+		cJSON_ReplaceItemInObject(obj, "rebellion_pushes_needed", cJSON_CreateNumber(0));
+		cJSON_ReplaceItemInObject(obj, "rebellion_pushes_done", cJSON_CreateNumber(0));
+		cJSON_ReplaceItemInObject(obj, "is_in_rebellion", cJSON_CreateBool(0));
+		cJSON_ReplaceItemInObject(obj, "date_rebellion", cJSON_CreateString(""));
+	} else {
+		printf("Мятеж подавляется: %d/%d\n", pushes_done, pushes_needed);
+		cJSON_ReplaceItemInObject(obj, "rebellion_pushes_done", cJSON_CreateNumber(pushes_done));
 	}
 }
 
@@ -256,8 +334,14 @@ void handle_push_t(GameWorld* gw, char* title){
 		return;
 	}
 	
+	bool is_rebellion = get_bool_field(obj, "is_in_rebellion");
+
+	// если у объекта мятеж увеличиваем кол-во пуша для успокоения
+	if(is_rebellion){
+		handle_rebellion(obj);
+	}
 	// если "не захват" увеличиваем очки захвата, когда будет ==, обьект обязательно захватился
-	if(strcmp(status_item, "not_captured") == 0){
+	else if(strcmp(status_item, "not_captured") == 0){
 		handle_prep(obj, gw, title); // готова, не обработаны ошибки
 	}
 	// если "захват" увеличиваем очки опыта, когда будет достигнут определенный уровень, меняем статус

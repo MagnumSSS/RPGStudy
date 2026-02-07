@@ -161,6 +161,9 @@ bool schedule_rebellion(cJSON* obj, struct task* node){
 	char date_str[11];
 	strftime(date_str, sizeof(date_str), "%Y-%m-%d", localtime(&rebellion_time));
 	
+	// добавляем timestamp время - время в секундах, которое отсчитывается с 1 января 1970 года + наши дни 
+	cJSON_AddNumberToObject(obj, "rebellion_start_timestamp", (double)rebellion_time);
+
 	// добавляем отдельные поля
 	cJSON_ReplaceItemInObject(obj, "date_rebellion", cJSON_CreateString(date_str));
 	cJSON_AddNumberToObject(obj, "rebellion_pushes_needed", 2 + rand() % 3);
@@ -171,6 +174,107 @@ bool schedule_rebellion(cJSON* obj, struct task* node){
 }
 
 
+int8_t is_date_today_or_earlier(const char* date_versus) {
+    if (!date_versus) return -2;
+
+    char today[11] = get_current_date();
+    //strftime(today, sizeof(today), "%Y-%m-%d", localtime(time(NULL)));
+
+    // cравниваем как строки: "2026-01-30" <= "2026-02-01" → true
+    int cmp = strcmp(date_versus, today);
+    if (cmp <= 0) {
+        return 1; // сегодня или раньше
+    }
+    return 0; // будущее
+}
+
+// отнимаем обьект у игрока, если не остановил мятеж
+void reset_object_to_not_captured(GameWorld* gw, cJSON* obj_json, const char* title){
+		// обнуляем статы обьекта
+		cJSON_ReplaceItemInObject(obj_json, "status", cJSON_CreateString("not_captured"));
+    cJSON_ReplaceItemInObject(obj_json, "is_in_rebellion", cJSON_CreateBool(0));
+    cJSON_ReplaceItemInObject(obj_json, "date_rebellion", cJSON_CreateString(""));
+    cJSON_ReplaceItemInObject(obj_json, "rebellion_start_timestamp", cJSON_CreateNumber(0));
+    cJSON_ReplaceItemInObject(obj_json, "prep_points", cJSON_CreateNumber(0));
+    cJSON_ReplaceItemInObject(obj_json, "xp", cJSON_CreateNumber(0));
+    cJSON_ReplaceItemInObject(obj_json, "level", cJSON_CreateNumber(0));
+
+		struct task* node = find_by_title(gw->world, title);
+		if(!node){
+			printf("Обьект %s не найден\n", title);
+			return;
+		}	
+
+		// находим родителя обьекта
+		struct task* parent = find_parent(gw->world, title);
+		if(!parent){
+			printf("У обьекта %s нет родителя(обьект страна?)\n", title);
+			return;
+		}
+
+
+		cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
+		if(!territories){
+			printf("Не найдено поле territories в JSON\n");
+			return;
+		}
+		cJSON* parent_obj = cJSON_GetObjectItem(gw->progress, parent->title);
+		if(!territories){
+			printf("Не найден родитель в JSON\n");
+			return;
+		}
+		
+		// если деревня то уменьшаем счетчик у родителя(города)
+		if(node->depth == 2){
+			int current = get_int_field(parent_json, "captured_villages");
+			if (current > 0) {
+        cJSON_ReplaceItemInObject(parent_json, "captured_villages", cJSON_CreateNumber(current - 1));
+      }
+		}
+		else if(node->depth == 1){
+			int current = get_int_field(parent_json, "captured_towns");
+			if (current > 0) {
+				cJSON_ReplaceItemInObject(parent_json, "captured_towns", cJSON_CreateNumber(current - 1));
+			}
+
+			int current_villages = get_int_field(parent_json, "total_captured_villages");
+			if(current_villages > 0){
+				cJSON_ReplaceItemInObject(parent_json, "total_captured_villages", cJSON_CreateNumber(current - 1));
+			}
+		}
+	
+	printf("Обьект %s был потерян из-за бездействия!!!!!!!!", title);
+}
+
+// газетчик или новости, смотрит у каких обьектов скоро будет мятеж или уже есть
+void fresh_news(GameWorld* gw){
+	  cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
+    if (!territories) return;
+		
+		// новая техника - получаем объекты parent->child
+		cJSON* obj =  territories->child;
+		while(obj){
+			if(get_bool_field(obj, "is_in_rebellion")){
+				double start_ts = get_int_field(obj, "rebellion_start_timestamp");
+				if(start_ts > 0){
+					// получаем нынешние секунды
+					time_t now = time(NULL);
+					// отсчитываем сколько прошло
+					int days_passed = (int)(now - (time_t)start_ts) / (24 * 3600);
+
+					// если больше 3 дней, то отнимаем город
+					if(days_passed > 3){
+						reset_object_to_not_captured(gw, obj, obj->string /*поле имени объекта*/);
+					}
+					else {
+						printf("⚠️ Мятеж в %s (%d/3 дней)\n", obj->string, days_passed);
+					}
+				}
+			}
+			// перемещаемся по объектам
+			obj = obj->next;
+		}
+}
 
 // обработчик для событий когда статус == "not captured" 
 void handle_prep(cJSON* obj, GameWorld* gw, char* title){
@@ -335,16 +439,28 @@ void handle_push_t(GameWorld* gw, char* title){
 	}
 	
 	bool is_rebellion = get_bool_field(obj, "is_in_rebellion");
-
 	// если у объекта мятеж увеличиваем кол-во пуша для успокоения
 	if(is_rebellion){
-		handle_rebellion(obj);
+		// проверяем дату мятежа, если сегодня, то handle_rebellion(obj);, если нет то xp
+		char* rebellion_date = get_string_field(obj, "date_rebellion");
+		int8_t st = is_data_today_or_earler(rebellion_date);
+		if(st == 1){
+			handle_rebellion(obj);
+		}
+		else {
+			handle_xp(obj);
+		}
+
 	}
 	// если "не захват" увеличиваем очки захвата, когда будет ==, обьект обязательно захватился
 	else if(strcmp(status_item, "not_captured") == 0){
 		handle_prep(obj, gw, title); // готова, не обработаны ошибки
 	}
 	// если "захват" увеличиваем очки опыта, когда будет достигнут определенный уровень, меняем статус
+
+
+
+
 	else{
 		handle_xp(obj); // готова, не обработаны ошибки
 	}

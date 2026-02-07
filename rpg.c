@@ -174,10 +174,10 @@ bool schedule_rebellion(cJSON* obj, struct task* node){
 }
 
 
-int8_t is_date_today_or_earlier(const char* date_versus) {
+int8_t is_date_today_or_earler(const char* date_versus) {
     if (!date_versus) return -2;
 
-    char today[11] = get_current_date();
+    char* today = get_current_date();
     //strftime(today, sizeof(today), "%Y-%m-%d", localtime(time(NULL)));
 
     // cравниваем как строки: "2026-01-30" <= "2026-02-01" → true
@@ -218,7 +218,7 @@ void reset_object_to_not_captured(GameWorld* gw, cJSON* obj_json, const char* ti
 			printf("Не найдено поле territories в JSON\n");
 			return;
 		}
-		cJSON* parent_obj = cJSON_GetObjectItem(gw->progress, parent->title);
+		cJSON* parent_json = cJSON_GetObjectItem(gw->progress, parent->title);
 		if(!territories){
 			printf("Не найден родитель в JSON\n");
 			return;
@@ -443,7 +443,7 @@ void handle_push_t(GameWorld* gw, char* title){
 	if(is_rebellion){
 		// проверяем дату мятежа, если сегодня, то handle_rebellion(obj);, если нет то xp
 		char* rebellion_date = get_string_field(obj, "date_rebellion");
-		int8_t st = is_data_today_or_earler(rebellion_date);
+		int8_t st = is_date_today_or_earler(rebellion_date);
 		if(st == 1){
 			handle_rebellion(obj);
 		}
@@ -802,26 +802,15 @@ int main(int argc, char* argv[]){
 	if (!gw) {
     fprintf(stderr, "Ошибка загрузки\n");
     return 1;
-	}
+	}		
 	
+
 	if(argc < 2){
 		printf("Введите полную команду\n");
 		return 1;
 	}
 
 
-	/*
-	if(strcmp(argv[1], "study") == 0){
-		if(argc < 3){
-			printf("Укажите название села/улицы\n");
-		}
-		else{
-			handle_study(gw, argv[2]);
-		}
-	} else {
-		printf("Неизвестная команда!\n");
-	}
-	*/
 	//handle_push(GameWorld* gw, char* flag, char* text_push, char* title)
 	if(argc == 3 && strcmp(argv[1], "push") == 0){
 		handle_push(gw, NULL, argv[2], NULL);		
@@ -833,6 +822,7 @@ int main(int argc, char* argv[]){
 		save_game(gw);
 		return 0;
 	}
+	fresh_news(gw);
 	save_game(gw);
 
 	return 0;

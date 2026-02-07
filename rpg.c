@@ -276,6 +276,129 @@ void fresh_news(GameWorld* gw){
 		}
 }
 
+// находится ли объект в нашем королевстве
+bool is_object_in_kingdom(GameWorld* gw, const char* title, const char* kingdom_title){
+	if(!gw || !title || !kingdom_title){
+		printf("Невалидные указатели аргументы в  is_object_in_kingdom\n");
+		return false;
+	}
+
+	// Если сам объект — королевство
+	if (strcmp(title, kingdom_title) == 0) {
+    return false; // королевство не может быть в своём же мятеже
+	}
+
+	struct task* parent = find_parent(gw->world, title);
+	if(!parent){
+		return false;
+	}
+	if(parent->depth == 1){
+		struct task* kingdom = find_parent(gw->world, parent->title);
+		if(!kingdom){
+			return false;
+		}
+		if(strcmp(kingdom->title, kingdom_title) == 0){
+			return true;
+		}
+	}
+	else {
+		if(strcmp(parent->title, kingdom_title) == 0){
+			return true;
+		}
+	}
+
+	return false;
+
+}
+
+// функция отмены всех мятежей
+void cancel_all_regular_rebellions(GameWorld* gw, const char* kingdom_title){
+	cJSON* ter = cJSON_GetObjectItem(gw->progress, "territories");
+	cJSON* obj = ter->child;
+
+	while(obj){
+		// пропускаем королевства
+		char* view = get_string_field(obj, "view");
+    if (view && strcmp(view, "KINGDOM") == 0) {
+      obj = obj->next;
+      continue;
+    }
+
+		if(is_object_in_kingdom(gw, obj->string, kingdom_title)){
+			cJSON_ReplaceItemInObject(obj, "is_in_rebellion", cJSON_CreateBool(0));
+      cJSON_ReplaceItemInObject(obj, "date_rebellion", cJSON_CreateString(""));
+      cJSON_ReplaceItemInObject(obj, "rebellion_start_timestamp", cJSON_CreateNumber(0));
+		}
+		obj = obj->next;
+	}
+}
+
+// активация мятежа с отсрочкой или без
+void activate_rebellion_at(cJSON* obj, time_t when) {
+    char date_str[11];
+    strftime(date_str, sizeof(date_str), "%Y-%m-%d", localtime(&when));
+    
+    cJSON_ReplaceItemInObject(obj, "is_in_rebellion", cJSON_CreateBool(1));
+    cJSON_ReplaceItemInObject(obj, "date_rebellion", cJSON_CreateString(date_str));
+    cJSON_ReplaceItemInObject(obj, "rebellion_start_timestamp", cJSON_CreateNumber((double)when));
+    cJSON_ReplaceItemInObject(obj, "rebellion_pushes_needed", cJSON_CreateNumber(3 + rand() % 3));
+}
+
+
+void trigger_multiple_rebellion(GameWorld* gw, struct task* kingdom){
+	// отменяем все обычные мятежи в стране
+	cancel_all_regular_rebellions(gw, kingdom->title);
+	
+	// теперь 10-ым городам объявят мятежи 
+	
+	// считаем города
+	size_t count_towns = element_length(kingdom);
+	if(count_towns <= 0){
+		printf("Не удалось посчитать количество городов\n");
+		return;
+	}
+
+	// сколько городов будет бунтовать (максимум 10)
+	int count_rebellion = (count_towns < 10) ? count_towns : 10;
+	
+	// выбираем рандом индексы
+	bool arr_idx[count_towns];
+	memset(arr_idx, 0, sizeof(arr_idx));	
+
+	size_t activated = 0;
+	while(activated < count_rebellion){
+		int idx = rand() % count_towns;
+		if(!arr_idx[idx]){
+			arr_idx[idx] = true;
+			activated++;
+		}
+	}
+
+	// активируем мятежи
+	struct task* town = kingdom->child;
+	for(size_t i = 0; i < count_towns && town; i++){
+		if(arr_idx[i]){
+			cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
+      cJSON* town_obj = cJSON_GetObjectItem(territories, town->title);
+      if (town_obj) {
+				// активирует мятеж сразу с отсрочкой,
+				int days = 5; 
+				time_t when = time(NULL) + days * 24 * 60 * 60;
+        activate_rebellion_at(town_obj, when);
+      }
+		}
+		town = town->next;
+	}
+
+	// обновляем статус королевства
+	cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
+  cJSON* kingdom_obj = cJSON_GetObjectItem(territories, kingdom->title);
+  if (kingdom_obj) {
+    cJSON_ReplaceItemInObject(kingdom_obj, "multiple_rebellion_kingdom", cJSON_CreateBool(1));
+    printf("🔥 Множественный бунт в %s (%d городов)!\n", kingdom->title, count_rebellion);
+  }
+}
+
 // обработчик для событий когда статус == "not captured" 
 void handle_prep(cJSON* obj, GameWorld* gw, char* title){
 	if(!obj){
@@ -292,6 +415,7 @@ void handle_prep(cJSON* obj, GameWorld* gw, char* title){
 	}
 	
 	prep_scores++;
+	// если захватил город
 	if(prep_scores >= count_scores){
 		cJSON_ReplaceItemInObject(obj, "status", cJSON_CreateString("captured"));
 
@@ -322,6 +446,7 @@ void handle_prep(cJSON* obj, GameWorld* gw, char* title){
 		printf("  - Родитель найден: '%s' (depth=%d)\n", parent->title, parent->depth);
 		printf("  - Родитель в JSON: %s\n", parent_item ? "да" : "НЕТ!");
 
+		// увеличиваем колво завоеванных для города
 		if(parent->depth == 1){
 			int captured = get_int_field(parent_item, "captured_villages");
 			if(captured == -1){
@@ -331,18 +456,20 @@ void handle_prep(cJSON* obj, GameWorld* gw, char* title){
 			captured++;
 			cJSON_ReplaceItemInObject(parent_item, "captured_villages", cJSON_CreateNumber(captured));
 			
+			// также увеличиваемм общее колво захваченных деревней
 			struct task* kingdom = find_parent(gw->world, parent->title);
-				if (kingdom && kingdom->depth == 0) {
-					cJSON* kingdom_item = cJSON_GetObjectItem(territories, kingdom->title);
-					if (kingdom_item) {
-            int total = get_int_field(kingdom_item, "total_captured_villages");
-            if (total != -1) {
-                cJSON_ReplaceItemInObject(kingdom_item, "total_captured_villages", 
-                cJSON_CreateNumber(total + 1));
-            }
-					}
+			if (kingdom && kingdom->depth == 0) {
+				cJSON* kingdom_item = cJSON_GetObjectItem(territories, kingdom->title);
+				if (kingdom_item) {
+					int total = get_int_field(kingdom_item, "total_captured_villages");
+          if (total != -1) {
+              cJSON_ReplaceItemInObject(kingdom_item, "total_captured_villages", 
+              cJSON_CreateNumber(total + 1));
+          }
 				}
+			}
 		}
+		// увеличиваем колво завоеванных для страны
 		else if(parent->depth == 0){
 			int captured = get_int_field(parent_item, "captured_towns");
 			if(captured == -1){
@@ -351,8 +478,21 @@ void handle_prep(cJSON* obj, GameWorld* gw, char* title){
 			}
 			captured++;
 			cJSON_ReplaceItemInObject(parent_item, "captured_towns", cJSON_CreateNumber(captured));
+			
+			// если захватил все города, то множественный бунт(нужно также добавить условие для захвата -t)
+			int total = get_int_field(parent_item, "all_count_town");
+			if(total == -1){
+				printf("Не удалось получить колво all_count_town\n");
+				return;
+			}
+			if(captured == total){
+				// страна захвачена
+				printf("Сработала заглушка для множественного бунта\n");
+				trigger_multiple_rebellion(gw, parent);
+			}
 		}
 	}
+	// если еще не захватил
 	else {
 		cJSON_ReplaceItemInObject(obj, "prep_points", cJSON_CreateNumber(prep_scores));
 	}
@@ -798,6 +938,7 @@ void save_game(GameWorld* gw){
 }
 
 int main(int argc, char* argv[]){
+	srand(time(NULL));
 	GameWorld* gw = load_game_state();
 	if (!gw) {
     fprintf(stderr, "Ошибка загрузки\n");

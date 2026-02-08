@@ -399,6 +399,40 @@ void trigger_multiple_rebellion(GameWorld* gw, struct task* kingdom){
   }
 }
 
+bool can_capture_node(GameWorld* gw, char* title){
+	if(!gw || !title){
+		printf("Невалидные указатели gw и title в can_capture_node\n");
+		return false;
+	}
+
+	// достаю обьект (страна или город)
+	struct task* node = find_by_title(gw->world, title);
+	if(!node) return false;
+
+	cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
+	if(!territories) return false;
+
+	cJSON* obj = cJSON_GetObjectItem(territories, title);
+	if(!obj) return false;
+
+	// теперь проверяем 
+	// если город, достаем статы деревень
+	if(node->depth == 1){
+		int all_count = get_int_field(obj, "all_count_village");
+		int captured_count = get_int_field(obj, "captured_villages");
+		return (captured_count >= all_count);
+	} 
+	// если страна, достаем статы городов
+	else if(node->depth == 0){
+		int all_count = get_int_field(obj, "all_count_town");
+		int captured_count = get_int_field(obj, "captured_towns");
+		return (captured_count >= all_count);
+	}
+	
+	// если село то всегда можно
+	return true;
+}
+
 // обработчик для событий когда статус == "not captured" 
 void handle_prep(cJSON* obj, GameWorld* gw, char* title){
 	if(!obj){
@@ -413,12 +447,25 @@ void handle_prep(cJSON* obj, GameWorld* gw, char* title){
 	if(count_scores == -1 || count_scores == 0){
 		return;
 	}
+
+	// проверяем можно ли в принципе захватывать объект
+	if(!can_capture_node(gw, title)){
+		printf("Нельзя захватывать %s, пока не захвачены объекты грейдом ниже\n", title);
+		return;
+	}
 	
 	prep_scores++;
 	// если захватил город
 	if(prep_scores >= count_scores){
-		cJSON_ReplaceItemInObject(obj, "status", cJSON_CreateString("captured"));
 
+		// проверяем можно ли захватить объект(всегда смотрите что удаляете)
+		if(!can_capture_node(gw, title)){
+			printf("Нельзя захватывать %s, пока не захвачены объекты грейдом ниже\n", title);
+			return;
+		}
+
+		cJSON_ReplaceItemInObject(obj, "status", cJSON_CreateString("captured"));
+							
 		// старт мятежа через n-дней
 		struct task* object_node = find_by_title(gw->world, title);
 		if(schedule_rebellion(obj, object_node)){
@@ -869,7 +916,6 @@ void sync_node(struct task* node, cJSON* territories) {
             // Поля города
             cJSON_AddNumberToObject(obj, "all_count_village", element_length(node->child));
             cJSON_AddNumberToObject(obj, "captured_villages", 0);
-            cJSON_AddBoolToObject(obj, "multiple_rebellion_town", 0);
 
         } else if (node->depth == 2) {
             cJSON_AddStringToObject(obj, "view", "VILLAGE");

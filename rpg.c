@@ -22,8 +22,35 @@ struct task {
 typedef struct {
 	struct task* world;
 	cJSON* progress;
+	cJSON* events;
 } GameWorld;
 
+// Сигнатуры для этапа 2 //
+
+struct task* find_parent(struct task* world, const char* child_title);
+char* get_current_date();
+void log_text_in_file(char* text_push, char* title);
+bool get_bool_field(cJSON* obj, char* title_obj);
+int get_int_field(cJSON* obj, char* title_obj);
+char* get_string_field(cJSON* obj, char* title_obj);
+bool schedule_rebellion(cJSON* obj, struct task* node);
+int8_t is_date_today_or_earler(const char* date_versus);
+void reset_object_to_not_captured(GameWorld* gw, cJSON* obj_json, const char* title);
+void fresh_news(GameWorld* gw);
+bool is_object_in_kingdom(GameWorld* gw, const char* title, const char* kingdom_title);
+void cancel_all_regular_rebellions(GameWorld* gw, const char* kingdom_title);
+void activate_rebellion_at(cJSON* obj, time_t when);
+void trigger_multiple_rebellion(GameWorld* gw, struct task* kingdom);
+bool can_capture_node(GameWorld* gw, char* title);
+void handle_prep(cJSON* obj, GameWorld* gw, char* title);
+void handle_rebellion(cJSON* obj);
+void handle_xp(cJSON* obj);
+void handle_push_t(GameWorld* gw, char* title);
+void handle_push(GameWorld* gw, char* flag, char* text_push, char* title);
+struct task* find_by_title(struct task* node, const char* title);
+
+
+// Сигнатуры для Этапа 1 //
 GameWorld* load_game_state();
 size_t element_length(const struct task* element);
 void element_destroy(struct task* element);
@@ -34,7 +61,188 @@ char* read_file(const char* filename);
 void sync_node(struct task* node, cJSON* territories);
 void calculate_kingdoms_town(struct task* kingdom, int* town, int* villages);
 void save_game(GameWorld* gw);
-struct task* find_by_title(struct task* node, const char* title); 
+
+
+/// 3 ///
+
+// газетчик ивентов пользователя
+void check_for_custom_events(GameWorld* gw) {
+		// получаем ивенты пользователя
+    cJSON* events_array = cJSON_GetObjectItem(gw->events, "custom_events");
+    if (!events_array) return;
+    
+		// получаем объекты родителя
+    cJSON* event = events_array->child;
+    int today_count = 0;
+    int upcoming_count = 0;
+    int completed_count = 0;
+    
+    printf("\n════════════════════════════════════════\n");
+    printf("📅 ПЛАНИРУЕМЫЕ СОБЫТИЯ:\n");
+    printf("════════════════════════════════════════\n\n");
+    
+    while (event) {
+        char* title = get_string_field(event, "title");
+        char* date = get_string_field(event, "date");
+        bool completed = get_bool_field(event, "completed");
+        
+				// если завершено, ивент сегодня или еще не начался - говорим
+        if (completed) {
+            printf("✅ %s | %s\n", date, title);
+            completed_count++;
+        } else if (date) {
+            if (is_date_today_or_earler(date)) {
+                printf("🔔 %s | %s\n", date, title);
+                today_count++;
+            } else {
+                printf("⏳ %s | %s\n", date, title);
+                upcoming_count++;
+            }
+        }
+        event = event->next;
+    }
+    
+    if (today_count == 0 && upcoming_count == 0 && completed_count == 0) {
+        printf("Нет запланированных событий\n");
+    }
+    
+    printf("\nАктивных: %d | Завершённых: %d | Впереди: %d\n", 
+           today_count, completed_count, upcoming_count);
+    printf("════════════════════════════════════════\n\n");
+}
+
+void handle_complete(GameWorld* gw, const char* title){
+	cJSON* events = cJSON_GetObjectItem(gw->events, "custom_events");
+	if(!events){
+		printf("Нет событий в принципе\n");
+		return;
+	}
+
+	cJSON* event = events->child;
+	while(event){
+		char* event_title = get_string_field(event, "title");
+		bool completed = get_bool_field(event, "completed");
+		
+		// если не завершено и все ок, то завершаем
+		if(!completed && event_title && strcmp(event_title, title) == 0){
+			// Завершаем событие
+      cJSON_ReplaceItemInObject(event, "completed", cJSON_CreateBool(1));
+            
+      // Логируем
+      char log_msg[256];
+      sprintf(log_msg, "Завершил событие: %s", title);
+      log_text_in_file("СОБЫТИЕ", log_msg);
+            
+      printf("✅ Событие завершено: %s\n", title);
+      return;
+		}
+		event = event->next;
+	}
+	printf("Событие не найдено: %s\n", title);
+
+}
+
+// обработчик -с
+void handle_push_c(GameWorld* gw, const char* title, const char* date_str){
+	if(!gw || !title || !date_str){
+		return;
+	}
+
+	if(strlen(date_str) != 10){
+		printf("Неверный формат даты (ожидается ГГГГ-ММ-ДД)\n");
+		return;
+	}
+
+	if (date_str[4] != '-' || date_str[7] != '-') {
+    printf("❌ Неверный формат даты (ожидается ГГГГ-ММ-ДД)\n");
+    return;
+  }
+	
+	// создаем ивент
+	// новый объект
+	cJSON* event = cJSON_CreateObject();
+	// поля нового объекта
+	cJSON_AddStringToObject(event, "title", title);
+  cJSON_AddStringToObject(event, "date", date_str);
+  cJSON_AddBoolToObject(event, "completed", 0);
+  cJSON_AddNumberToObject(event, "duration_days", 3);
+	
+	// засовываем в массив
+	cJSON* events_array = cJSON_GetObjectItem(gw->events, "custom_events");
+  if (!events_array) {
+    events_array = cJSON_CreateArray();
+    cJSON_AddItemToObject(gw->events, "custom_events", events_array);
+  }
+  cJSON_AddItemToArray(events_array, event);
+
+
+	// логируем
+	char log_msg[256];
+	sprintf(log_msg, "Запланировал событие: %s", title);
+	log_text_in_file("СОБЫТИЕ", log_msg);
+
+
+	printf("📅 Событие запланировано: %s (%s)\n", title, date_str);
+}
+
+
+// сохранение ивентов
+void save_events(GameWorld* gw){
+	if(!gw->events) return;
+
+	char* json_str = cJSON_Print(gw->events);
+	if (!json_str) {
+		printf("❌ Ошибка создания JSON-строки для событий\n");
+    return;
+  }
+
+	FILE* f = fopen("events.json", "w");
+	if(f){
+		fprintf(f, "%s", json_str);
+		fclose(f);
+	}
+	free(json_str);
+
+}
+
+// загрузка ивентов пользователя
+void load_events(GameWorld* gw){
+	FILE* fp = fopen("events.json", "r");
+	// если не открыли, создаем
+	if(!fp){
+		gw->events = cJSON_CreateObject();
+		cJSON_AddItemToObject(gw->events, "custom_events", cJSON_CreateArray());
+		// сохранение ивентов
+		save_events(gw);
+		return;
+	}
+	
+	// ставим курсор в конец файла, читаем сколько байтов весит, возвращаем обратно
+	fseek(fp, 0, SEEK_END);
+	long size = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	
+	// создаем буфер на размер_файла+1 и записываем в него содержимое файла
+	char* buffer = malloc(size + 1);
+	fread(buffer, 1, size, fp);
+	buffer[size] = '\0';
+	fclose(fp);
+
+	// записываем все в формат cJSON
+	gw->events = cJSON_Parse(buffer);
+	free(buffer);
+
+	if(!gw->events){
+		gw->events = cJSON_CreateObject();
+		cJSON_AddItemToObject(gw->events, "custom_events", cJSON_CreateArray());
+	}
+
+	cJSON* events_array = cJSON_GetObjectItem(gw->events, "custom_events");
+	if(!events_array){
+		cJSON_AddItemToObject(gw->events, "custom_events", cJSON_CreateArray());
+	}
+}
+
 
 /// 2 ///
 
@@ -123,7 +331,7 @@ int get_int_field(cJSON* obj, char* title_obj){
 		return (int)item->valuedouble;
 	}
 	else{
-		printf("Не удалось получить поле элемента %s\n", title_obj);
+		//printf("Не удалось получить поле элемента %s\n", title_obj);
 		return -1;
 	}
 }
@@ -135,7 +343,7 @@ char* get_string_field(cJSON* obj, char* title_obj){
 		return item->valuestring;
 	}
 	else{
-		printf("Не удалось получить поле элемента %s\n", title_obj);
+		//printf("Не удалось получить поле элемента %s\n", title_obj);
 		return NULL;
 	}
 }
@@ -243,7 +451,7 @@ void reset_object_to_not_captured(GameWorld* gw, cJSON* obj_json, const char* ti
 			}
 		}
 	
-	printf("Обьект %s был потерян из-за бездействия!!!!!!!!", title);
+	printf("Обьект %s был потерян из-за бездействия!!!!!!!!\n", title);
 }
 
 // газетчик или новости, смотрит у каких обьектов скоро будет мятеж или уже есть
@@ -682,6 +890,7 @@ void handle_push(GameWorld* gw, char* flag, char* text_push, char* title){
 		}
 		// обработчик пуша с -c
 		printf("Сработала заглушка для -c\n");
+		handle_push_c(gw, text_push, title);
 	}
 
 }
@@ -990,6 +1199,7 @@ int main(int argc, char* argv[]){
     fprintf(stderr, "Ошибка загрузки\n");
     return 1;
 	}		
+	load_events(gw);
 	
 
 	if(argc < 2){
@@ -1006,11 +1216,18 @@ int main(int argc, char* argv[]){
 		handle_push(gw, argv[2], argv[3], argv[4]);
 	}
 	else if(argc == 2 && strcmp(argv[1], "--init") == 0){
+		fresh_news(gw);
+		check_for_custom_events(gw);
 		save_game(gw);
 		return 0;
 	}
+	else if(argc == 4 && strcmp(argv[1], "push") == 0 && strcmp(argv[2], "complete") == 0){
+		handle_complete(gw, argv[3]);
+	}
+	
+	check_for_custom_events(gw);
 	fresh_news(gw);
 	save_game(gw);
-
+	save_events(gw);
 	return 0;
 }

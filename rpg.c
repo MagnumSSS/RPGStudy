@@ -24,10 +24,43 @@ typedef struct {
 	cJSON* progress; // территории 
 	cJSON* events; // ивенты пользователя
 	cJSON* user; // прокачка юзера
+	cJSON* library; //библиотека
 } GameWorld;
 
-// Сигнатуры для этапа 2 //
+// Сигнатуры для этапа 4 // 
+void show_help();
+void save_user(GameWorld* gw);
+void ensure_user_sections(GameWorld* gw);
+void load_user(GameWorld* gw);
+void add_kingdom_xp(GameWorld* gw, int xp);
+void add_total_push(GameWorld* gw);
+void load_library(GameWorld* gw);
+void save_library(GameWorld* gw);
+void add_book(GameWorld* gw, const char* title, const char* author, int pages);
+void read_book(GameWorld* gw, const char* title, int pages);
+void create_scroll(GameWorld* gw, const char* book_title, const char* scroll_title, const char* content);
+void show_library(GameWorld* gw);
+void craft_weapon(GameWorld* gw);
+void use_equipment(GameWorld* gw, const char* title);
+void add_element_xp(GameWorld* gw, const char* element_name);
+void show_status(GameWorld* gw);
+void show_kingdom_status(GameWorld* gw);
+void show_forge_status(GameWorld* gw);
+void show_elements_status(GameWorld* gw);
+void show_rebellions_status(GameWorld* gw);
 
+
+
+
+// Сигнатуры для этапа 3 //
+void check_for_custom_events(GameWorld* gw);
+void handle_complete(GameWorld* gw, const char* title);
+void handle_push_c(GameWorld* gw, const char* title, const char* date_str);
+void save_events(GameWorld* gw);
+void load_events(GameWorld* gw);
+
+
+// Сигнатуры для этапа 2 //
 struct task* find_parent(struct task* world, const char* child_title);
 char* get_current_date();
 void log_text_in_file(char* text_push, char* title);
@@ -63,7 +96,160 @@ void sync_node(struct task* node, cJSON* territories);
 void calculate_kingdoms_town(struct task* kingdom, int* town, int* villages);
 void save_game(GameWorld* gw);
 
+
 /// 4 /// 
+void show_help() {
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════════════╗\n");
+    printf("║                    📖 СПРАВКА ПО RPG 📖                      ║\n");
+    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    
+    printf("\n");
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("                    🎮 ОСНОВНЫЕ КОМАНДЫ                        \n");
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg push \"текст\"\n");
+    printf("     Обычный пуш — добавляет опыт королевству (+1 XP)\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg push -t \"текст\" \"территория\"\n");
+    printf("     Захват территории — добавляет прогресс к захвату территории\n");
+    printf("     Пример: ./rpg push -t \"изучил open\" \"сисвыз_open\"\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg push -c \"событие\" \"дата\"\n");
+    printf("     Создать событие с датой (формат: ГГГГ-ММ-ДД)\n");
+    printf("     Пример: ./rpg push -c \"Экзамен по C\" \"2026-02-21\"\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg push complete \"событие\"\n");
+    printf("     Завершить событие (отметить как выполненное)\n");
+    printf("     Пример: ./rpg push complete \"Экзамен по C\"\n");
+    printf("\n");
+    
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("                    ⚡ СТИХИИ И РАЗВИТИЕ                       \n");
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg push -s \"стихия\"\n");
+    printf("     Прокачать стихию (+10 XP к стихии)\n");
+    printf("     Пример: ./rpg push -s \"C\"\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg push -ts \"стихия\" \"территория\"\n");
+    printf("     Захватить территорию + прокачать стихию одновременно (+20 XP королевству)\n");
+    printf("     Пример: ./rpg push -ts \"C\" \"сисвыз_open\"\n");
+    printf("\n");
+    
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("                    ⚒️  КУЗНИЦА                                \n");
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg push -fc\n");
+    printf("     Создать оружие в кузнице (+1 к запасу)\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg push -fu \"территория\"\n");
+    printf("     Использовать оружие на территории (уменьшает сложность захвата)\n");
+    printf("     ⚠️ Ограничение: нельзя уменьшить сложность ниже половины от исходной\n");
+    printf("     Пример: ./rpg push -fu \"сисвыз_open\"\n");
+    printf("\n");
+    
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("                    📚 БИБЛИОТЕКА                              \n");
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg library add \"название\" --author \"автор\" --pages <число>\n");
+    printf("     Добавить книгу в библиотеку\n");
+    printf("     Пример: ./rpg library add \"C Programming Language\" --author \"K&R\" --pages 272\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg library read \"название\" --pages <число>\n");
+    printf("     Прочитать страницы книги (+1 XP королевству за каждые 10 страниц)\n");
+    printf("     Пример: ./rpg library read \"C Programming Language\" --pages 20\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg library scroll \"название\" --title \"свиток\" --content \"текст\"\n");
+    printf("     Создать свиток (конспект) для книги\n");
+    printf("     Пример: ./rpg library scroll \"C Programming Language\" --title \"Указатели\" --content \"Указатель — это адрес...\"\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg library show\n");
+    printf("     Показать всю библиотеку с прогрессом чтения и свитками\n");
+    printf("\n");
+    
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("                    📊 СТАТУС И ГАЗЕТЧИКИ                      \n");
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg status\n");
+    printf("     Показать общий статус королевства (уровень, прогресс, события)\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg kingdom\n");
+    printf("     Детальный статус королевства и зданий (кузница, библиотека, арена)\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg forge\n");
+    printf("     Статус кузницы (запас оружия, всего создано)\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg elements\n");
+    printf("     Статус стихий (уровни, опыт)\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg rebellions\n");
+    printf("     Активные мятежи и их прогресс подавления\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg events\n");
+    printf("     Планируемые события (сегодня, впереди, завершённые)\n");
+    printf("\n");
+    
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("                    🔄 ИНИЦИАЛИЗАЦИЯ                           \n");
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("\n");
+    
+    printf("  🔹 ./rpg --init\n");
+    printf("     Инициализация игры (первый запуск) + показать газетчики за сегодня\n");
+    printf("\n");
+    
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("                    💡 ПОЛЕЗНЫЕ СОВЕТЫ                         \n");
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("\n");
+    
+    printf("  ✅ Регулярность важнее интенсивности — подавляйте мятежи вовремя!\n");
+    printf("  ✅ Крафтите оружие заранее — оно поможет на сложных территориях.\n");
+    printf("  ✅ Читайте книги — это даёт опыт королевству и развивает стихии.\n");
+    printf("  ✅ Захватывайте территории по иерархии: улица → город → страна.\n");
+    printf("  ✅ Используйте стихии — они дают бонусы к связанным территориям.\n");
+    printf("\n");
+    
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("                    🎯 БЫСТРЫЙ СТАРТ                            \n");
+    printf("════════════════════════════════════════════════════════════════\n");
+    printf("\n");
+    
+    printf("  1. ./rpg --init                    # Инициализация игры\n");
+    printf("  2. ./rpg push -t \"изучил\" \"сисвыз_open\"  # Захват улицы\n");
+    printf("  3. ./rpg push -s \"C\"              # Прокачать стихию\n");
+    printf("  4. ./rpg push -fc                  # Создать оружие (на будущее)\n");
+    printf("  5. ./rpg status                    # Проверить прогресс\n");
+    printf("\n");
+    
+    printf("╔══════════════════════════════════════════════════════════════╗\n");
+    printf("║                    УДАЧИ В РАЗВИТИИ! 🏰                      ║\n");
+    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    printf("\n");
+}
 
 void save_user(GameWorld* gw){
 	if(!gw->user) return;
@@ -113,18 +299,6 @@ void ensure_user_sections(GameWorld* gw) {
         cJSON_AddItemToObject(buildings, "forge", forge);
     }
     
-    // Арена
-    if (!cJSON_GetObjectItem(buildings, "arena")) {
-        cJSON* arena = cJSON_CreateObject();
-        cJSON_AddNumberToObject(arena, "level", 1);
-        cJSON* records = cJSON_CreateObject();
-        cJSON_AddNumberToObject(records, "sprint", 0);
-        cJSON_AddNumberToObject(records, "wave", 0);
-        cJSON_AddNumberToObject(records, "survival", 0);
-        cJSON_AddItemToObject(arena, "records", records);
-        cJSON_AddItemToObject(buildings, "arena", arena);
-    }
-    
     // Библиотека
     if (!cJSON_GetObjectItem(buildings, "library")) {
         cJSON* library = cJSON_CreateObject();
@@ -161,7 +335,9 @@ void load_user(GameWorld* gw){
 		cJSON* buildings = cJSON_CreateObject();
 
 		// Кузница
+		// cJSON_CreateObject(); - создание объекта
     cJSON* forge = cJSON_CreateObject();
+		// добавление ему полей
     cJSON_AddNumberToObject(forge, "level", 1);
     cJSON_AddNumberToObject(forge, "weapons_crafted", 0);
     cJSON_AddNumberToObject(forge, "equipment_stock", 0);
@@ -169,28 +345,10 @@ void load_user(GameWorld* gw){
 		// cJSON_AddItemToObject - добавление объекта b в объект a
     cJSON_AddItemToObject(buildings, "forge", forge);
 		
-
-		// Арена
-		// cJSON_CreateObject(); - создание объекта 
-		cJSON* arena = cJSON_CreateObject();
-		// добавление ему полей
-    cJSON_AddNumberToObject(arena, "level", 1);
-		cJSON* records = cJSON_CreateObject();
-		cJSON_AddNumberToObject(records, "sprint", 0);
-    cJSON_AddNumberToObject(records, "wave", 0);
-    cJSON_AddNumberToObject(records, "survival", 0);
-		// добавление объекта в объект(records в arena)
-    cJSON_AddItemToObject(arena, "records", records);
-		// добавление объекта в объект(arena в buildings)
-    cJSON_AddItemToObject(buildings, "arena", arena);
-
-
 		// Библиотека
     cJSON* library = cJSON_CreateObject();
 		cJSON_AddNumberToObject(library, "level", 1);
     cJSON_AddNumberToObject(library, "books_read", 0);
-		cJSON_AddNumberToObject(library, "pages_read_today", 0);
-		cJSON_AddNumberToObject(library, "pages_read_total", 0);
     cJSON_AddNumberToObject(library, "scrolls_created", 0);
     cJSON_AddItemToObject(buildings, "library", library);  
 
@@ -228,7 +386,7 @@ void load_user(GameWorld* gw){
 }
 
 // прокачка королевства
-void add_kingdom_xp(GameWorld* gw) {
+void add_kingdom_xp(GameWorld* gw, int xp) {
     cJSON* kingdom = cJSON_GetObjectItem(gw->user, "kingdom");
     if (!kingdom) return;
     
@@ -236,7 +394,7 @@ void add_kingdom_xp(GameWorld* gw) {
     int xp_to_next = get_int_field(kingdom, "xp_to_next");
     int level = get_int_field(kingdom, "level");
     
-    current_xp += 1;
+    current_xp += xp;
     
     // Проверка уровня
     if (current_xp >= xp_to_next) {
@@ -261,6 +419,271 @@ void add_total_push(GameWorld* gw) {
     int total = get_int_field(kingdom, "total_pushes");
     total++;
     cJSON_ReplaceItemInObject(kingdom, "total_pushes", cJSON_CreateNumber(total));
+}
+
+// библиотека - загрузка
+void load_library(GameWorld* gw) {
+    FILE* f = fopen("library.json", "r");
+    if (!f) {
+        // Создаём новый файл
+        gw->library = cJSON_CreateObject();
+        cJSON_AddItemToObject(gw->library, "books", cJSON_CreateArray());
+        save_library(gw);
+        return;
+    }
+    
+    // Загрузка существующего файла (аналогично другим)
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    
+    char* data = malloc(len + 1);
+    fread(data, 1, len, f);
+    data[len] = '\0';
+    fclose(f);
+    
+    gw->library = cJSON_Parse(data);
+    free(data);
+    
+    if (!gw->library) {
+        gw->library = cJSON_CreateObject();
+    }
+    
+    // Гарантия наличия массива книг
+    if (!cJSON_GetObjectItem(gw->library, "books")) {
+        cJSON_AddItemToObject(gw->library, "books", cJSON_CreateArray());
+    }
+}
+
+// сохранение библиотеки
+void save_library(GameWorld* gw) {
+    if (!gw->library) return;
+    
+    char* json_str = cJSON_Print(gw->library);
+    if (!json_str) return;
+    
+    FILE* f = fopen("library.json", "w");
+    if (f) {
+        fprintf(f, "%s", json_str);
+        fclose(f);
+    }
+    free(json_str);
+}
+
+// добавление книги
+void add_book(GameWorld* gw, const char* title, const char* author, int pages) {
+    if (!gw->library) {
+        printf("❌ Библиотека не инициализирована!\n");
+        return;
+    }
+    
+    cJSON* books = cJSON_GetObjectItem(gw->library, "books");
+    if (!books) {
+        books = cJSON_CreateArray();
+        cJSON_AddItemToObject(gw->library, "books", books);
+    }
+    
+    // Проверяем, существует ли уже такая книга
+    cJSON* book = books->child;
+    while (book) {
+        char* book_title = get_string_field(book, "title");
+        if (book_title && strcmp(book_title, title) == 0) {
+            printf("⚠️ Книга '%s' уже существует!\n", title);
+            return;
+        }
+        book = book->next;
+    }
+    
+    // Создаём новую книгу
+    cJSON* new_book = cJSON_CreateObject();
+    cJSON_AddStringToObject(new_book, "title", title);
+    cJSON_AddStringToObject(new_book, "author", author);
+    cJSON_AddNumberToObject(new_book, "total_pages", pages);
+    cJSON_AddNumberToObject(new_book, "read_pages", 0);
+    cJSON_AddStringToObject(new_book, "status", "unread");
+    cJSON_AddItemToObject(new_book, "scrolls", cJSON_CreateArray());
+    
+    cJSON_AddItemToArray(books, new_book);
+    
+    // Обновляем статистику в user.json
+    cJSON* lib_stats = cJSON_GetObjectItem(cJSON_GetObjectItem(gw->user, "buildings"), "library");
+    if (lib_stats) {
+        int total = get_int_field(lib_stats, "books_read");
+        cJSON_ReplaceItemInObject(lib_stats, "books_read", cJSON_CreateNumber(total + 1));
+    }
+    
+    printf("📚 Добавлена книга: %s (%s)\n", title, author);
+}
+
+// прочтение книги
+void read_book(GameWorld* gw, const char* title, int pages) {
+    if (!gw->library) {
+        printf("❌ Библиотека не инициализирована!\n");
+        return;
+    }
+    
+    cJSON* books = cJSON_GetObjectItem(gw->library, "books");
+    if (!books) {
+        printf("❌ Нет книг в библиотеке!\n");
+        return;
+    }
+    
+    cJSON* book = books->child;
+    while (book) {
+        char* book_title = get_string_field(book, "title");
+        if (book_title && strcmp(book_title, title) == 0) {
+            int read_pages = get_int_field(book, "read_pages");
+            int total_pages = get_int_field(book, "total_pages");
+            
+            read_pages += pages;
+            if (read_pages > total_pages) {
+                read_pages = total_pages;
+            }
+            
+            cJSON_ReplaceItemInObject(book, "read_pages", cJSON_CreateNumber(read_pages));
+            
+            // Обновляем статус
+            char* status = "reading";
+            if (read_pages == total_pages) {
+                status = "read";
+            }
+            cJSON_ReplaceItemInObject(book, "status", cJSON_CreateString(status));
+            
+            printf("📖 Прочитано %d страниц книги '%s' (%d/%d)\n", pages, title, read_pages, total_pages);
+            
+            // Добавляем опыт королевству
+            add_kingdom_xp(gw, pages / 10); // 1 XP за каждые 10 страниц
+            
+            return;
+        }
+        book = book->next;
+    }
+    
+    printf("❌ Книга не найдена: %s\n", title);
+}
+
+// создание свитков краткого содержания для прочитанного
+void create_scroll(GameWorld* gw, const char* book_title, const char* scroll_title, const char* content) {
+    if (!gw->library) {
+        printf("❌ Библиотека не инициализирована!\n");
+        return;
+    }
+    
+    cJSON* books = cJSON_GetObjectItem(gw->library, "books");
+    if (!books) {
+        printf("❌ Нет книг в библиотеке!\n");
+        return;
+    }
+    
+    cJSON* book = books->child;
+    while (book) {
+        char* title = get_string_field(book, "title");
+        if (title && strcmp(title, book_title) == 0) {
+            cJSON* scrolls = cJSON_GetObjectItem(book, "scrolls");
+            if (!scrolls) {
+                scrolls = cJSON_CreateArray();
+                cJSON_AddItemToObject(book, "scrolls", scrolls);
+            }
+            
+            // Создаём свиток
+            cJSON* scroll = cJSON_CreateObject();
+            cJSON_AddStringToObject(scroll, "title", scroll_title);
+            cJSON_AddStringToObject(scroll, "content", content);
+            cJSON_AddStringToObject(scroll, "date", get_current_date());
+            
+            cJSON_AddItemToArray(scrolls, scroll);
+            
+            // Обновляем статистику в user.json
+            cJSON* lib_stats = cJSON_GetObjectItem(cJSON_GetObjectItem(gw->user, "buildings"), "library");
+            if (lib_stats) {
+                int total = get_int_field(lib_stats, "scrolls_created");
+                cJSON_ReplaceItemInObject(lib_stats, "scrolls_created", cJSON_CreateNumber(total + 1));
+            }
+            
+            printf("📜 Создан свиток '%s' для книги '%s'\n", scroll_title, book_title);
+            return;
+        }
+        book = book->next;
+    }
+    
+    printf("❌ Книга не найдена: %s\n", book_title);
+}
+
+// показать библиотеку
+void show_library(GameWorld* gw) {
+    if (!gw->library) {
+        printf("❌ Библиотека не загружена!\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════════════╗\n");
+    printf("║                    📚 МОЯ БИБЛИОТЕКА 📚                      ║\n");
+    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    
+    cJSON* books = cJSON_GetObjectItem(gw->library, "books");
+    if (!books || books->child == NULL) {
+        printf("\n📭 Библиотека пуста. Добавьте книги: ./rpg library add\n");
+        return;
+    }
+    
+    cJSON* book = books->child;
+    int unread = 0, reading = 0, read = 0;
+    
+    while (book) {
+        char* title = get_string_field(book, "title");
+        char* author = get_string_field(book, "author");
+        int total = get_int_field(book, "total_pages");
+        int read_pages = get_int_field(book, "read_pages");
+        char* status = get_string_field(book, "status");
+        
+        printf("\n");
+        printf("   📖 %s\n", title);
+        printf("      Автор: %s\n", author);
+        printf("      Страниц: %d/%d\n", read_pages, total);
+        printf("      Статус: %s", status);
+        
+        if (strcmp(status, "unread") == 0) unread++;
+        else if (strcmp(status, "reading") == 0) reading++;
+        else if (strcmp(status, "read") == 0) read++;
+        
+        // Прогресс бар
+        int progress = (read_pages * 30) / total;
+        printf(" [");
+        for (int i = 0; i < 30; i++) {
+            printf("%s", (i < progress) ? "█" : "░");
+        }
+        printf("] %d%%\n", progress * 3);
+        
+        // Свитки
+        cJSON* scrolls = cJSON_GetObjectItem(book, "scrolls");
+        if (scrolls && scrolls->child) {
+            printf("      📜 Свитки: ");
+            cJSON* scroll = scrolls->child;
+            while (scroll) {
+                char* scroll_title = get_string_field(scroll, "title");
+                printf("%s", scroll_title);
+                scroll = scroll->next;
+                if (scroll) printf(", ");
+            }
+            printf("\n");
+        }
+        
+        book = book->next;
+    }
+    
+    printf("\n");
+    printf("📊 Статистика:\n");
+    printf("   📖 Всего книг: %d\n", unread + reading + read);
+    printf("   ✅ Прочитано: %d | 📝 Читаю: %d | ❌ Не читал: %d\n", read, reading, unread);
+    
+    printf("\n");
+    printf("📖 Команды:\n");
+    printf("   ./rpg library add <название> --author <автор> --pages <страниц>\n");
+    printf("   ./rpg library read <название> --pages <страниц>\n");
+    printf("   ./rpg library scroll <название> --title <свиток> --content <текст>\n");
+    
+    printf("\n");
 }
 
 // кузня
@@ -288,7 +711,6 @@ void craft_weapon(GameWorld* gw) {
 
 // использование оружия для захвата
 void use_equipment(GameWorld* gw, const char* title) {
-		// вытасикаваем инфу о колве оружия
     cJSON* buildings = cJSON_GetObjectItem(gw->user, "buildings");
     if (!buildings) return;
     
@@ -297,7 +719,7 @@ void use_equipment(GameWorld* gw, const char* title) {
     
     int stock = get_int_field(forge, "equipment_stock");
     
-    if (stock <= 0 ) {
+    if (stock <= 0) {
         printf("❌ Нет оружия в запасе!\n");
         return;
     }
@@ -311,16 +733,34 @@ void use_equipment(GameWorld* gw, const char* title) {
         return;
     }
     
-    // Уменьшаем сложность захвата
-    int count_scores = get_int_field(obj, "count_scores");
-    count_scores = (count_scores > 1) ? count_scores - 1 : 1;
+    // Читаем текущую и исходную сложность
+    int current_scores = get_int_field(obj, "count_scores");
+    int original_scores = get_int_field(obj, "original_count_scores");
     
-    cJSON_ReplaceItemInObject(obj, "count_scores", cJSON_CreateNumber(count_scores));
+    if (original_scores == -1) {
+        // Если поле не существует, используем текущее как исходное
+        original_scores = current_scores;
+    }
+    
+    // Вычисляем минимальную допустимую сложность (половина от исходной)
+    int min_scores = (original_scores + 1) / 2; // Округление вверх
+    
+    // Проверяем, можно ли уменьшить
+    if (current_scores <= min_scores) {
+        printf("⚠️ Сложность уже на минимальном уровне (%d/%d)\n", current_scores, original_scores);
+        return;
+    }
+    
+    // Уменьшаем сложность
+    current_scores--;
+    
+    cJSON_ReplaceItemInObject(obj, "count_scores", cJSON_CreateNumber(current_scores));
     stock--;
     
     cJSON_ReplaceItemInObject(forge, "equipment_stock", cJSON_CreateNumber(stock));
     
-    printf("🛡️ Использовано оружие для %s! Новая сложность: %d\n", title, count_scores);
+    printf("🛡️ Использовано оружие для %s!\n", title);
+    printf("   Сложность: %d → %d (минимум: %d)\n", current_scores + 1, current_scores, min_scores);
 }
 
 // создание стихии и его прокачка
@@ -360,6 +800,285 @@ void add_element_xp(GameWorld* gw, const char* element_name) {
     }
     
     cJSON_ReplaceItemInObject(element, "xp", cJSON_CreateNumber(current_xp));
+}
+
+// красивый вывод
+// ./rpg status - общий статус
+void show_status(GameWorld* gw) {
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════════════╗\n");
+    printf("║                    🏰 СТАТУС КОРОЛЕВСТВА 🏰                  ║\n");
+    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    
+    // Королевство
+    cJSON* kingdom = cJSON_GetObjectItem(gw->user, "kingdom");
+    if (kingdom) {
+        int level = get_int_field(kingdom, "level");
+        int xp = get_int_field(kingdom, "xp");
+        int xp_to_next = get_int_field(kingdom, "xp_to_next");
+        int total_pushes = get_int_field(kingdom, "total_pushes");
+        
+        printf("\n👑 Уровень королевства: %d (XP: %d/%d)\n", level, xp, xp_to_next);
+        printf("📊 Всего пушей: %d\n", total_pushes);
+        
+        // Прогресс бар
+        int progress = (xp * 50) / xp_to_next;
+        printf("📈 Прогресс: [");
+        for (int i = 0; i < 50; i++) {
+            printf("%s", (i < progress) ? "█" : "░");
+        }
+        printf("] %d%%\n", progress * 2);
+    }
+    
+    // Захваченные территории
+    cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
+    if (territories) {
+        int captured = 0;
+        int total = 0;
+        
+        cJSON* obj = territories->child;
+        while (obj) {
+            char* status = get_string_field(obj, "status");
+            if (status && strcmp(status, "captured") == 0) {
+                captured++;
+            }
+            total++;
+            obj = obj->next;
+        }
+        
+        printf("\n🌍 Территории: %d/%d захвачено (%.1f%%)\n", captured, total, (captured * 100.0) / total);
+        
+        // Прогресс бар
+        int progress = (captured * 50) / total;
+        printf("🗺️  Прогресс: [");
+        for (int i = 0; i < 50; i++) {
+            printf("%s", (i < progress) ? "█" : "░");
+        }
+        printf("] %d%%\n", progress * 2);
+    }
+    
+    // Активные мятежи
+    int rebellions = 0;
+    if (territories) {
+        cJSON* obj = territories->child;
+        while (obj) {
+            if (get_bool_field(obj, "is_in_rebellion")) {
+                rebellions++;
+            }
+            obj = obj->next;
+        }
+    }
+    
+    printf("\n⚔️  Активных мятежей: %d\n", rebellions);
+    
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════════════╗\n");
+    printf("║                    📅 БЛИЖАЙШИЕ СОБЫТИЯ 📅                   ║\n");
+    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    
+    check_for_custom_events(gw);
+    
+    printf("\n");
+}
+
+// ./rpg kingdom - статус королевства
+void show_kingdom_status(GameWorld* gw) {
+    cJSON* kingdom = cJSON_GetObjectItem(gw->user, "kingdom");
+    if (!kingdom) {
+        printf("❌ Королевство не найдено\n");
+        return;
+    }
+    
+    int level = get_int_field(kingdom, "level");
+    int xp = get_int_field(kingdom, "xp");
+    int xp_to_next = get_int_field(kingdom, "xp_to_next");
+    int total_pushes = get_int_field(kingdom, "total_pushes");
+    char* last_active = get_string_field(kingdom, "last_active_date");
+    
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════════════╗\n");
+    printf("║                    👑 КОРОЛЕВСТВО 👑                         ║\n");
+    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    printf("\n");
+    printf("   🏰 Уровень: %d\n", level);
+    printf("   ⭐ Опыт: %d / %d\n", xp, xp_to_next);
+    
+    int progress = (xp * 30) / xp_to_next;
+    printf("   📊 Прогресс: [");
+    for (int i = 0; i < 30; i++) {
+        printf("%s", (i < progress) ? "█" : "░");
+    }
+    printf("] %d%%\n", progress * 3);
+    
+    printf("\n");
+    printf("   📈 Всего пушей: %d\n", total_pushes);
+    printf("   📅 Последняя активность: %s\n", last_active ? last_active : "неизвестно");
+    
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════════════╗\n");
+    printf("║                    🏗️  ЗДАНИЯ 🏗️                             ║\n");
+    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    
+    cJSON* buildings = cJSON_GetObjectItem(gw->user, "buildings");
+    if (buildings) {
+        // Кузница
+        cJSON* forge = cJSON_GetObjectItem(buildings, "forge");
+        if (forge) {
+            int level = get_int_field(forge, "level");
+            int stock = get_int_field(forge, "equipment_stock");
+            int crafted = get_int_field(forge, "weapons_crafted");
+            
+            printf("\n   ⚒️  КУЗНИЦА (Уровень %d)\n", level);
+            printf("      Оружие в запасе: %d\n", stock);
+            printf("      Всего создано: %d\n", crafted);
+        }
+        
+        // Библиотека
+        cJSON* library = cJSON_GetObjectItem(buildings, "library");
+        if (library) {
+            int level = get_int_field(library, "level");
+            int books = get_int_field(library, "books_read");
+            int scrolls = get_int_field(library, "scrolls_created");
+            
+            printf("\n   📚 БИБЛИОТЕКА (Уровень %d)\n", level);
+            printf("      Прочитано книг: %d\n", books);
+            printf("      Создано свитков: %d\n", scrolls);
+        }
+    }
+    
+    printf("\n");
+}
+
+// ./rpg forge — Статус кузницы
+void show_forge_status(GameWorld* gw) {
+    cJSON* buildings = cJSON_GetObjectItem(gw->user, "buildings");
+    if (!buildings) {
+        printf("❌ Здания не найдены\n");
+        return;
+    }
+    
+    cJSON* forge = cJSON_GetObjectItem(buildings, "forge");
+    if (!forge) {
+        printf("❌ Кузница не найдена\n");
+        return;
+    }
+    
+    int level = get_int_field(forge, "level");
+    int stock = get_int_field(forge, "equipment_stock");
+    int crafted = get_int_field(forge, "weapons_crafted");
+    
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════════════╗\n");
+    printf("║                    ⚒️  КУЗНИЦА ⚒️                            ║\n");
+    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    printf("\n");
+    printf("   🏭 Уровень: %d\n", level);
+    printf("   🗡️  Оружие в запасе: %d шт.\n", stock);
+    printf("   🔨 Всего создано: %d шт.\n", crafted);
+    
+    printf("\n");
+    printf("   📖 Команды:\n");
+    printf("      ./rpg push -fc        — создать оружие\n");
+    printf("      ./rpg push -fu <терр> — использовать на территории\n");
+    
+    printf("\n");
+}
+
+// ./rpg elements — Статус стихий
+void show_elements_status(GameWorld* gw) {
+    cJSON* elements = cJSON_GetObjectItem(gw->user, "elements");
+    if (!elements) {
+        printf("❌ Стихии не найдены\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════════════╗\n");
+    printf("║                    🌊🔥🌪️🌍 СТИХИИ 🌍🌪️🔥🌊                   ║\n");
+    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    
+    cJSON* elem = elements->child;
+    if (!elem) {
+        printf("\n📭 Нет изученных стихий. Начните с: ./rpg push -s <стихия>\n");
+    }
+    
+    while (elem) {
+        int level = get_int_field(elem, "level");
+        int xp = get_int_field(elem, "xp");
+        int xp_to_next = get_int_field(elem, "xp_to_next");
+        
+        printf("\n");
+        printf("   🌟 %s (Уровень %d)\n", elem->string, level);
+        printf("      XP: %d / %d\n", xp, xp_to_next);
+        
+        int progress = (xp * 30) / xp_to_next;
+        printf("      [");
+        for (int i = 0; i < 30; i++) {
+            printf("%s", (i < progress) ? "█" : "░");
+        }
+        printf("] %d%%\n", progress * 3);
+        
+        elem = elem->next;
+    }
+    
+    printf("\n");
+    printf("   📖 Команды:\n");
+    printf("      ./rpg push -s <стихия>        — прокачать стихию +10 XP\n");
+    printf("      ./rpg push -ts <стихия> <терр> — захватить + прокачать стихию\n");
+    
+    printf("\n");
+}
+
+// ./rpg rebellions — Активные мятежи
+void show_rebellions_status(GameWorld* gw) {
+    cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
+    if (!territories) {
+        printf("❌ Территории не найдены\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════════════╗\n");
+    printf("║                    ⚔️  АКТИВНЫЕ МЯТЕЖИ ⚔️                    ║\n");
+    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    
+    int count = 0;
+    cJSON* obj = territories->child;
+    
+    while (obj) {
+        if (get_bool_field(obj, "is_in_rebellion")) {
+            char* title = obj->string;
+            char* date_reb = get_string_field(obj, "date_rebellion");
+            int pushes_done = get_int_field(obj, "rebellion_pushes_done");
+            int pushes_needed = get_int_field(obj, "rebellion_pushes_needed");
+            
+            if (pushes_needed == -1) pushes_needed = 3;
+            if (pushes_done == -1) pushes_done = 0;
+            
+            printf("\n");
+            printf("   🟥 %s\n", title);
+            printf("      Начало мятежа: %s\n", date_reb ? date_reb : "неизвестно");
+            printf("      Прогресс подавления: %d / %d\n", pushes_done, pushes_needed);
+            
+            int progress = (pushes_done * 30) / pushes_needed;
+            printf("      [");
+            for (int i = 0; i < 30; i++) {
+                printf("%s", (i < progress) ? "█" : "░");
+            }
+            printf("] %d%%\n", progress * 3);
+            
+            count++;
+        }
+        obj = obj->next;
+    }
+    
+    if (count == 0) {
+        printf("\n📭 Нет активных мятежей. Мир в королевстве!\n");
+    } else {
+        printf("\n📊 Всего активных мятежей: %d\n", count);
+    }
+    
+    printf("\n");
 }
 
 /// 3 ///
@@ -1166,7 +1885,7 @@ void handle_push(GameWorld* gw, char* flag, char* text_push, char* title){
         // Обычный пуш без флага
         if (text_push) {
             log_text_in_file(text_push, title);
-            add_kingdom_xp(gw);
+            add_kingdom_xp(gw, 1);
         }
         return;
     }
@@ -1178,7 +1897,7 @@ void handle_push(GameWorld* gw, char* flag, char* text_push, char* title){
             return;
         }
         handle_push_t(gw, title);
-        add_kingdom_xp(gw);
+        add_kingdom_xp(gw, 1);
         printf("Сработала функция для -t\n");
     }
     else if (strcmp(flag, "-c") == 0) {
@@ -1188,7 +1907,7 @@ void handle_push(GameWorld* gw, char* flag, char* text_push, char* title){
         }
         printf("Сработала заглушка для -c\n");
         handle_push_c(gw, text_push, title);
-        add_kingdom_xp(gw);
+        add_kingdom_xp(gw, 1);
     }
     else if (strcmp(flag, "-s") == 0) {
         if (!title) {
@@ -1196,12 +1915,12 @@ void handle_push(GameWorld* gw, char* flag, char* text_push, char* title){
             return;
         }
         add_element_xp(gw, title);
-        add_kingdom_xp(gw);
+        add_kingdom_xp(gw, 1);
     }
     else if (strcmp(flag, "-fc") == 0) {
         printf("Метка создания оружия\n");
         craft_weapon(gw);
-				add_kingdom_xp(gw);
+				add_kingdom_xp(gw, 1);
     }
     else if (strcmp(flag, "-fu") == 0) {
         if (!title) {
@@ -1519,23 +2238,46 @@ void save_game(GameWorld* gw){
 	free(gw);
 }
 
-
 int main(int argc, char* argv[]){
     srand(time(NULL));
+    
+    // Загрузка данных
     GameWorld* gw = load_game_state();
     if (!gw) {
-        fprintf(stderr, "Ошибка загрузки\n");
+        fprintf(stderr, "Ошибка загрузки мира\n");
         return 1;
     }
+    
     load_events(gw);
     load_user(gw);
+    load_library(gw);
 
-    if(argc < 2){
-        printf("Введите полную команду\n");
+    // ===== СПРАВКА =====
+    if (argc == 2 && strcmp(argv[1], "--help") == 0) {
+        show_help();
+        return 0;
+    }
+
+    // ===== ИНИЦИАЛИЗАЦИЯ =====
+    if (argc == 2 && strcmp(argv[1], "--init") == 0) {
+        fresh_news(gw);
+        check_for_custom_events(gw);
+        save_game(gw);
+        save_user(gw);
+        save_events(gw);
+        save_library(gw);
+        return 0;
+    }
+
+    // ===== ПРОВЕРКА АРГУМЕНТОВ =====
+    if (argc < 2) {
+        printf("Введите команду. Используйте ./rpg --help для справки.\n");
         return 1;
     }
 
-    // Обработка команд
+    // ===== ОБРАБОТКА КОМАНД =====
+    
+    // === ПУШИ ===
     if (strcmp(argv[1], "push") == 0) {
         if (argc == 3) {
             // push "текст"
@@ -1543,7 +2285,7 @@ int main(int argc, char* argv[]){
             add_total_push(gw);
         }
         else if (argc == 4) {
-            // push -s "стихия"  ИЛИ  push -fu "территория"
+            // push -s "стихия"  ИЛИ  push -fc  ИЛИ  push -fu "территория"
             handle_push(gw, argv[2], NULL, argv[3]);
             add_total_push(gw);
         }
@@ -1552,30 +2294,87 @@ int main(int argc, char* argv[]){
             handle_push(gw, argv[2], argv[3], argv[4]);
             add_total_push(gw);
         }
+        else if (argc == 4 && strcmp(argv[2], "complete") == 0) {
+            // push complete "событие"
+            handle_complete(gw, argv[3]);
+            add_total_push(gw);
+        }
         else {
-            printf("Неверное количество аргументов для push\n");
+            printf("Неверное количество аргументов для push. Используйте ./rpg --help\n");
+            return 1;
         }
     }
-    else if (argc == 2 && strcmp(argv[1], "--init") == 0) {
-        fresh_news(gw);
-        check_for_custom_events(gw);
-        save_game(gw);
-        save_user(gw);
-        save_events(gw);
-        return 0;
-    }
-    else if (argc == 4 && strcmp(argv[1], "push") == 0 && strcmp(argv[2], "complete") == 0) {
-        handle_complete(gw, argv[3]);
-        add_total_push(gw);
+
+    // === БИБЛИОТЕКА ===
+    else if (argc >= 2 && strcmp(argv[1], "library") == 0) {
+        if (argc >= 6 && strcmp(argv[2], "add") == 0) {
+            // library add "название" --author "автор" --pages <число>
+            char* title = argv[3];
+            char* author = (argc >= 8 && strcmp(argv[4], "--author") == 0) ? argv[5] : "Неизвестен";
+            int pages = (argc >= 10 && strcmp(argv[6], "--pages") == 0) ? atoi(argv[7]) : 100;
+            add_book(gw, title, author, pages);
+        }
+        else if (argc >= 6 && strcmp(argv[2], "read") == 0) {
+            // library read "название" --pages <число>
+            char* title = argv[3];
+            int pages = (argc >= 6 && strcmp(argv[4], "--pages") == 0) ? atoi(argv[5]) : 10;
+            read_book(gw, title, pages);
+        }
+        else if (argc >= 8 && strcmp(argv[2], "scroll") == 0) {
+            // library scroll "название" --title "свиток" --content "текст"
+            char* book_title = argv[3];
+            char* scroll_title = (argc >= 6 && strcmp(argv[4], "--title") == 0) ? argv[5] : "Без названия";
+            char* content = (argc >= 8 && strcmp(argv[6], "--content") == 0) ? argv[7] : "";
+            create_scroll(gw, book_title, scroll_title, content);
+        }
+        else {
+            printf("Неверная команда library. Используйте ./rpg --help\n");
+            return 1;
+        }
     }
 
-    // Газетчики
-    check_for_custom_events(gw);
-    fresh_news(gw);
+    // === СТАТУСЫ ===
+    else if (argc == 2) {
+        if (strcmp(argv[1], "status") == 0) {
+            show_status(gw);
+            return 0;
+        }
+        else if (strcmp(argv[1], "kingdom") == 0) {
+            show_kingdom_status(gw);
+            return 0;
+        }
+        else if (strcmp(argv[1], "forge") == 0) {
+            show_forge_status(gw);
+            return 0;
+        }
+        else if (strcmp(argv[1], "elements") == 0) {
+            show_elements_status(gw);
+            return 0;
+        }
+        else if (strcmp(argv[1], "rebellions") == 0) {
+            show_rebellions_status(gw);
+            return 0;
+        }
+        else if (strcmp(argv[1], "events") == 0) {
+            check_for_custom_events(gw);
+            return 0;
+        }
+				else if(strcmp(argv[1], "library") == 0){
+						show_library(gw);
+						return 0;
+				}
+        else {
+            printf("Неизвестная команда: %s. Используйте ./rpg --help\n", argv[1]);
+            return 1;
+        }
+    }
 
-    // Сохранение
+
+    // ===== СОХРАНЕНИЕ =====
     save_user(gw);
     save_game(gw);
     save_events(gw);
+    save_library(gw);
+    
     return 0;
 }

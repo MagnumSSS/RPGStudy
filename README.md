@@ -75,3 +75,11 @@
 
 #Записка 16
 Обработаны ошибки
+
+
+```markdown
+## Используемые библиотеки
+
+- **cJSON** — библиотека для работы с JSON
+  - Репозиторий: [DaveGamble/cJSON](https://github.com/DaveGamble/cJSON)
+  - Лицензия: MIT

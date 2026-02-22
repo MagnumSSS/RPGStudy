@@ -21,8 +21,9 @@ struct task {
 
 typedef struct {
 	struct task* world;
-	cJSON* progress;
-	cJSON* events;
+	cJSON* progress; // территории 
+	cJSON* events; // ивенты пользователя
+	cJSON* user; // прокачка юзера
 } GameWorld;
 
 // Сигнатуры для этапа 2 //
@@ -62,6 +63,304 @@ void sync_node(struct task* node, cJSON* territories);
 void calculate_kingdoms_town(struct task* kingdom, int* town, int* villages);
 void save_game(GameWorld* gw);
 
+/// 4 /// 
+
+void save_user(GameWorld* gw){
+	if(!gw->user) return;
+
+	char* json_str = cJSON_Print(gw->user);
+	if (!json_str) {
+		printf("Ошибка создания JSON-строки для событий\n");
+    return;
+  }
+
+	FILE* f = fopen("user.json", "w");
+	if(f){
+		fprintf(f, "%s", json_str);
+		fclose(f);
+	}
+	free(json_str);
+}
+
+void ensure_user_sections(GameWorld* gw) {
+		/// если нет объекта, добавляем
+    // Королевство
+    if (!cJSON_GetObjectItem(gw->user, "kingdom")) {
+        cJSON* kingdom = cJSON_CreateObject();
+        cJSON_AddNumberToObject(kingdom, "level", 1);
+        cJSON_AddNumberToObject(kingdom, "xp", 0);
+        cJSON_AddNumberToObject(kingdom, "xp_to_next", 100);
+        cJSON_AddNumberToObject(kingdom, "total_pushes", 0);
+        cJSON_AddStringToObject(kingdom, "last_active_date", get_current_date());
+        cJSON_AddItemToObject(gw->user, "kingdom", kingdom);
+    }
+    
+    // Здания
+    if (!cJSON_GetObjectItem(gw->user, "buildings")) {
+        cJSON* buildings = cJSON_CreateObject();
+        cJSON_AddItemToObject(gw->user, "buildings", buildings);
+    }
+    
+    cJSON* buildings = cJSON_GetObjectItem(gw->user, "buildings");
+    
+    // Кузница
+    if (!cJSON_GetObjectItem(buildings, "forge")) {
+        cJSON* forge = cJSON_CreateObject();
+        cJSON_AddNumberToObject(forge, "level", 1);
+        cJSON_AddNumberToObject(forge, "weapons_crafted", 0);
+        cJSON_AddNumberToObject(forge, "equipment_stock", 0);
+        cJSON_AddStringToObject(forge, "last_craft_date", "");
+        cJSON_AddItemToObject(buildings, "forge", forge);
+    }
+    
+    // Арена
+    if (!cJSON_GetObjectItem(buildings, "arena")) {
+        cJSON* arena = cJSON_CreateObject();
+        cJSON_AddNumberToObject(arena, "level", 1);
+        cJSON* records = cJSON_CreateObject();
+        cJSON_AddNumberToObject(records, "sprint", 0);
+        cJSON_AddNumberToObject(records, "wave", 0);
+        cJSON_AddNumberToObject(records, "survival", 0);
+        cJSON_AddItemToObject(arena, "records", records);
+        cJSON_AddItemToObject(buildings, "arena", arena);
+    }
+    
+    // Библиотека
+    if (!cJSON_GetObjectItem(buildings, "library")) {
+        cJSON* library = cJSON_CreateObject();
+        cJSON_AddNumberToObject(library, "level", 1);
+        cJSON_AddNumberToObject(library, "books_read", 0);
+				cJSON_AddNumberToObject(library, "pages_read_today", 0);
+				cJSON_AddNumberToObject(library, "pages_read_total", 0);
+        cJSON_AddNumberToObject(library, "scrolls_created", 0);
+        cJSON_AddItemToObject(buildings, "library", library);
+    }
+    
+    // Стихии
+    if (!cJSON_GetObjectItem(gw->user, "elements")) {
+        cJSON_AddItemToObject(gw->user, "elements", cJSON_CreateObject());
+    }
+}
+
+void load_user(GameWorld* gw){
+	FILE* f = fopen("user.json", "r");
+	if(!f){
+		gw->user = cJSON_CreateObject();
+		
+		// королество
+		cJSON* kingdom = cJSON_CreateObject();
+		cJSON_AddNumberToObject(kingdom, "level", 1);
+    cJSON_AddNumberToObject(kingdom, "xp", 0);
+    cJSON_AddNumberToObject(kingdom, "xp_to_next", 10);
+    cJSON_AddNumberToObject(kingdom, "total_pushes", 0);
+    cJSON_AddStringToObject(kingdom, "last_active_date", get_current_date());
+    cJSON_AddItemToObject(gw->user, "kingdom", kingdom);
+		
+
+		// все здания
+		cJSON* buildings = cJSON_CreateObject();
+
+		// Кузница
+    cJSON* forge = cJSON_CreateObject();
+    cJSON_AddNumberToObject(forge, "level", 1);
+    cJSON_AddNumberToObject(forge, "weapons_crafted", 0);
+    cJSON_AddNumberToObject(forge, "equipment_stock", 0);
+    cJSON_AddStringToObject(forge, "last_craft_date", "");
+		// cJSON_AddItemToObject - добавление объекта b в объект a
+    cJSON_AddItemToObject(buildings, "forge", forge);
+		
+
+		// Арена
+		// cJSON_CreateObject(); - создание объекта 
+		cJSON* arena = cJSON_CreateObject();
+		// добавление ему полей
+    cJSON_AddNumberToObject(arena, "level", 1);
+		cJSON* records = cJSON_CreateObject();
+		cJSON_AddNumberToObject(records, "sprint", 0);
+    cJSON_AddNumberToObject(records, "wave", 0);
+    cJSON_AddNumberToObject(records, "survival", 0);
+		// добавление объекта в объект(records в arena)
+    cJSON_AddItemToObject(arena, "records", records);
+		// добавление объекта в объект(arena в buildings)
+    cJSON_AddItemToObject(buildings, "arena", arena);
+
+
+		// Библиотека
+    cJSON* library = cJSON_CreateObject();
+		cJSON_AddNumberToObject(library, "level", 1);
+    cJSON_AddNumberToObject(library, "books_read", 0);
+		cJSON_AddNumberToObject(library, "pages_read_today", 0);
+		cJSON_AddNumberToObject(library, "pages_read_total", 0);
+    cJSON_AddNumberToObject(library, "scrolls_created", 0);
+    cJSON_AddItemToObject(buildings, "library", library);  
+
+    cJSON_AddItemToObject(gw->user, "buildings", buildings);
+		
+		// стихии, пока пусто
+		cJSON_AddItemToObject(gw->user, "elements", cJSON_CreateObject());
+
+		save_user(gw);
+		return;
+	}
+
+	// Загружаем существующий файл
+  fseek(f, 0, SEEK_END);
+  long len = ftell(f);
+  fseek(f, 0, SEEK_SET);
+    
+	// делаем все также как и в 3-ем этапе
+  char* data = malloc(len + 1);
+  fread(data, 1, len, f);
+  data[len] = '\0';
+  fclose(f);
+    
+
+  gw->user = cJSON_Parse(data);
+  free(data);
+    
+  if (!gw->user) {
+    printf("Ошибка парсинга user.json\n");
+    gw->user = cJSON_CreateObject();
+  }
+
+	// проверка
+	ensure_user_sections(gw);
+}
+
+// прокачка королевства
+void add_kingdom_xp(GameWorld* gw) {
+    cJSON* kingdom = cJSON_GetObjectItem(gw->user, "kingdom");
+    if (!kingdom) return;
+    
+    int current_xp = get_int_field(kingdom, "xp");
+    int xp_to_next = get_int_field(kingdom, "xp_to_next");
+    int level = get_int_field(kingdom, "level");
+    
+    current_xp += 1;
+    
+    // Проверка уровня
+    if (current_xp >= xp_to_next) {
+        level++;
+        current_xp = 0;
+        xp_to_next *= 2; // экспоненциальный рост
+        
+        cJSON_ReplaceItemInObject(kingdom, "level", cJSON_CreateNumber(level));
+        cJSON_ReplaceItemInObject(kingdom, "xp_to_next", cJSON_CreateNumber(xp_to_next));
+        
+        printf("👑 Королевство достигло уровня %d!\n", level);
+    }
+    
+    cJSON_ReplaceItemInObject(kingdom, "xp", cJSON_CreateNumber(current_xp));
+}
+
+// увеличение колва всех пушей
+void add_total_push(GameWorld* gw) {
+    cJSON* kingdom = cJSON_GetObjectItem(gw->user, "kingdom");
+    if (!kingdom) return;
+    
+    int total = get_int_field(kingdom, "total_pushes");
+    total++;
+    cJSON_ReplaceItemInObject(kingdom, "total_pushes", cJSON_CreateNumber(total));
+}
+
+// кузня
+void craft_weapon(GameWorld* gw) {
+    cJSON* buildings = cJSON_GetObjectItem(gw->user, "buildings");
+    if (!buildings) return;
+    
+    cJSON* forge = cJSON_GetObjectItem(buildings, "forge");
+    if (!forge) return;
+    
+    // крафтим оружие (без ограничений!)
+		// сколько оружий есть сейчас
+    int stock = get_int_field(forge, "equipment_stock");
+    stock++;
+    
+		// сколько оружий было создано в принципе
+    int crafted = get_int_field(forge, "weapons_crafted");
+    crafted++;
+    
+    cJSON_ReplaceItemInObject(forge, "equipment_stock", cJSON_CreateNumber(stock));
+    cJSON_ReplaceItemInObject(forge, "weapons_crafted", cJSON_CreateNumber(crafted));
+    cJSON_ReplaceItemInObject(forge, "last_craft_date", cJSON_CreateString(get_current_date()));
+    printf("⚔️ Создано новое оружие! Запас: %d (всего создано: %d)\n", stock, crafted);
+}
+
+// использование оружия для захвата
+void use_equipment(GameWorld* gw, const char* title) {
+		// вытасикаваем инфу о колве оружия
+    cJSON* buildings = cJSON_GetObjectItem(gw->user, "buildings");
+    if (!buildings) return;
+    
+    cJSON* forge = cJSON_GetObjectItem(buildings, "forge");
+    if (!forge) return;
+    
+    int stock = get_int_field(forge, "equipment_stock");
+    
+    if (stock <= 0 ) {
+        printf("❌ Нет оружия в запасе!\n");
+        return;
+    }
+    
+    // Находим территорию
+    cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
+    cJSON* obj = cJSON_GetObjectItem(territories, title);
+    
+    if (!obj) {
+        printf("❌ Территория не найдена: %s\n", title);
+        return;
+    }
+    
+    // Уменьшаем сложность захвата
+    int count_scores = get_int_field(obj, "count_scores");
+    count_scores = (count_scores > 1) ? count_scores - 1 : 1;
+    
+    cJSON_ReplaceItemInObject(obj, "count_scores", cJSON_CreateNumber(count_scores));
+    stock--;
+    
+    cJSON_ReplaceItemInObject(forge, "equipment_stock", cJSON_CreateNumber(stock));
+    
+    printf("🛡️ Использовано оружие для %s! Новая сложность: %d\n", title, count_scores);
+}
+
+// создание стихии и его прокачка
+void add_element_xp(GameWorld* gw, const char* element_name) {
+		// проверка на наличие
+    cJSON* elements = cJSON_GetObjectItem(gw->user, "elements");
+    if (!elements) return;
+    
+		
+    cJSON* element = cJSON_GetObjectItem(elements, element_name);
+		// если такого элемента не найдено, создаем
+    if (!element) {
+        // Создаём новую стихию
+        element = cJSON_CreateObject();
+        cJSON_AddNumberToObject(element, "level", 1);
+        cJSON_AddNumberToObject(element, "xp", 0);
+        cJSON_AddNumberToObject(element, "xp_to_next", 100);
+        cJSON_AddItemToObject(elements, element_name, element);
+    }
+    // прокачиваем 
+    int current_xp = get_int_field(element, "xp");
+    int xp_to_next = get_int_field(element, "xp_to_next");
+    int level = get_int_field(element, "level");
+    
+    current_xp++;
+    
+    // Проверка уровня
+    if (current_xp >= xp_to_next) {
+        level++;
+        current_xp = 0;
+        xp_to_next *= 2;
+        
+        cJSON_ReplaceItemInObject(element, "level", cJSON_CreateNumber(level));
+        cJSON_ReplaceItemInObject(element, "xp_to_next", cJSON_CreateNumber(xp_to_next));
+        
+        printf("✨ Стихия '%s' достигла уровня %d!\n", element_name, level);
+    }
+    
+    cJSON_ReplaceItemInObject(element, "xp", cJSON_CreateNumber(current_xp));
+}
 
 /// 3 ///
 
@@ -863,37 +1162,65 @@ void handle_push_t(GameWorld* gw, char* title){
 }
 
 void handle_push(GameWorld* gw, char* flag, char* text_push, char* title){
-	if(!text_push){
-		printf("Текст Пуша не найден\n");
-	} 
+    if (!flag) {
+        // Обычный пуш без флага
+        if (text_push) {
+            log_text_in_file(text_push, title);
+            add_kingdom_xp(gw);
+        }
+        return;
+    }
 
-	log_text_in_file(text_push, title);
-
-	if(!flag){
-		//ничего не делаем - обычный пуш
-		return;	
-	}
-
-	else if(strcmp(flag, "-t") == 0){
-		if(!title){
-			printf("Для флага -t нужно указать город/cело\n");
-			return;
-		}
-		//printf("Сработала заглушка для -t\n");
-		handle_push_t(gw, title);
-		printf("Сработала функция для -t\n");
-	}
-	else if(strcmp(flag, "-c") == 0){
-		if(!title){
-			printf("Для флага -c нужно указать дату события[dd-mm-YYYY]\n");
-			return;
-		}
-		// обработчик пуша с -c
-		printf("Сработала заглушка для -c\n");
-		handle_push_c(gw, text_push, title);
-	}
-
+    // Флаги с параметрами
+    if (strcmp(flag, "-t") == 0) {
+        if (!title) {
+            printf("Для флага -t нужно указать территорию\n");
+            return;
+        }
+        handle_push_t(gw, title);
+        add_kingdom_xp(gw);
+        printf("Сработала функция для -t\n");
+    }
+    else if (strcmp(flag, "-c") == 0) {
+        if (!title) {
+            printf("Для флага -c нужно указать дату [ГГГГ-ММ-ДД]\n");
+            return;
+        }
+        printf("Сработала заглушка для -c\n");
+        handle_push_c(gw, text_push, title);
+        add_kingdom_xp(gw);
+    }
+    else if (strcmp(flag, "-s") == 0) {
+        if (!title) {
+            printf("Для флага -s нужно указать стихию\n");
+            return;
+        }
+        add_element_xp(gw, title);
+        add_kingdom_xp(gw);
+    }
+    else if (strcmp(flag, "-fc") == 0) {
+        printf("Метка создания оружия\n");
+        craft_weapon(gw);
+				add_kingdom_xp(gw);
+    }
+    else if (strcmp(flag, "-fu") == 0) {
+        if (!title) {
+            printf("Для флага -fu нужно указать территорию\n");
+            return;
+        }
+        use_equipment(gw, title);
+    }
+    else {
+        printf("Неизвестный флаг: %s\n", flag);
+        printf("Доступные флаги:\n");
+        printf("  -t    захват территории\n");
+        printf("  -c    создание события\n");
+        printf("  -s    прокачка стихии\n");
+        printf("  -fc   создание оружия\n");
+        printf("  -fu   использование оружия\n");
+    }
 }
+
 
 //функция нахождения элемента по имени через рекурсию
 struct task* find_by_title(struct task* node, const char* title) {
@@ -1192,42 +1519,63 @@ void save_game(GameWorld* gw){
 	free(gw);
 }
 
+
 int main(int argc, char* argv[]){
-	srand(time(NULL));
-	GameWorld* gw = load_game_state();
-	if (!gw) {
-    fprintf(stderr, "Ошибка загрузки\n");
-    return 1;
-	}		
-	load_events(gw);
-	
+    srand(time(NULL));
+    GameWorld* gw = load_game_state();
+    if (!gw) {
+        fprintf(stderr, "Ошибка загрузки\n");
+        return 1;
+    }
+    load_events(gw);
+    load_user(gw);
 
-	if(argc < 2){
-		printf("Введите полную команду\n");
-		return 1;
-	}
+    if(argc < 2){
+        printf("Введите полную команду\n");
+        return 1;
+    }
 
+    // Обработка команд
+    if (strcmp(argv[1], "push") == 0) {
+        if (argc == 3) {
+            // push "текст"
+            handle_push(gw, NULL, argv[2], NULL);
+            add_total_push(gw);
+        }
+        else if (argc == 4) {
+            // push -s "стихия"  ИЛИ  push -fu "территория"
+            handle_push(gw, argv[2], NULL, argv[3]);
+            add_total_push(gw);
+        }
+        else if (argc == 5) {
+            // push -t/-c "текст" "территория/дата"
+            handle_push(gw, argv[2], argv[3], argv[4]);
+            add_total_push(gw);
+        }
+        else {
+            printf("Неверное количество аргументов для push\n");
+        }
+    }
+    else if (argc == 2 && strcmp(argv[1], "--init") == 0) {
+        fresh_news(gw);
+        check_for_custom_events(gw);
+        save_game(gw);
+        save_user(gw);
+        save_events(gw);
+        return 0;
+    }
+    else if (argc == 4 && strcmp(argv[1], "push") == 0 && strcmp(argv[2], "complete") == 0) {
+        handle_complete(gw, argv[3]);
+        add_total_push(gw);
+    }
 
-	//handle_push(GameWorld* gw, char* flag, char* text_push, char* title)
-	if(argc == 3 && strcmp(argv[1], "push") == 0){
-		handle_push(gw, NULL, argv[2], NULL);		
-	}
-	else if(argc == 5 && strcmp(argv[1], "push") == 0 && (strcmp(argv[2], "-t") == 0 || strcmp(argv[2], "-c") == 0)){
-		handle_push(gw, argv[2], argv[3], argv[4]);
-	}
-	else if(argc == 2 && strcmp(argv[1], "--init") == 0){
-		fresh_news(gw);
-		check_for_custom_events(gw);
-		save_game(gw);
-		return 0;
-	}
-	else if(argc == 4 && strcmp(argv[1], "push") == 0 && strcmp(argv[2], "complete") == 0){
-		handle_complete(gw, argv[3]);
-	}
-	
-	check_for_custom_events(gw);
-	fresh_news(gw);
-	save_game(gw);
-	save_events(gw);
-	return 0;
+    // Газетчики
+    check_for_custom_events(gw);
+    fresh_news(gw);
+
+    // Сохранение
+    save_user(gw);
+    save_game(gw);
+    save_events(gw);
+    return 0;
 }

@@ -139,11 +139,6 @@ void show_help() {
     printf("     Пример: ./rpg push -s \"C\"\n");
     printf("\n");
     
-    printf("  🔹 ./rpg push -ts \"стихия\" \"территория\"\n");
-    printf("     Захватить территорию + прокачать стихию одновременно (+20 XP королевству)\n");
-    printf("     Пример: ./rpg push -ts \"C\" \"сисвыз_open\"\n");
-    printf("\n");
-    
     printf("════════════════════════════════════════════════════════════════\n");
     printf("                    ⚒️  КУЗНИЦА                                \n");
     printf("════════════════════════════════════════════════════════════════\n");
@@ -2220,22 +2215,26 @@ GameWorld* load_game_state(){
   return all_world;
 }
 
+// Только сохранение, без освобождения
 void save_game(GameWorld* gw){
-	// переносим в текстовый массив
-	char* output = cJSON_Print(gw->progress);
-	// если все норм то открываем файл и записываем в него
-	if(output){
-		FILE* fp = fopen("progress.json", "w");
-		if(fp){
-			fwrite(output, 1, strlen(output), fp);
-			fclose(fp);
-		}
-		free(output);
-	}
-	// все удаляем
-	cJSON_Delete(gw->progress);
-	element_destroy(gw->world);
-	free(gw);
+    char* output = cJSON_Print(gw->progress);
+    if(output){
+        FILE* fp = fopen("progress.json", "w");
+        if(fp){
+            fwrite(output, 1, strlen(output), fp);
+            fclose(fp);
+        }
+        free(output);
+    }
+    // ← УБРАТЬ освобождение памяти отсюда!
+}
+
+// Отдельная функция для освобождения
+void cleanup_game(GameWorld* gw){
+    if (!gw) return;
+    cJSON_Delete(gw->progress);
+    element_destroy(gw->world);
+    free(gw);
 }
 
 int main(int argc, char* argv[]){
@@ -2255,6 +2254,7 @@ int main(int argc, char* argv[]){
     // ===== СПРАВКА =====
     if (argc == 2 && strcmp(argv[1], "--help") == 0) {
         show_help();
+				cleanup_game(gw);
         return 0;
     }
 
@@ -2262,10 +2262,11 @@ int main(int argc, char* argv[]){
     if (argc == 2 && strcmp(argv[1], "--init") == 0) {
         fresh_news(gw);
         check_for_custom_events(gw);
-        save_game(gw);
         save_user(gw);
         save_events(gw);
         save_library(gw);
+				save_game(gw);
+				cleanup_game(gw);
         return 0;
     }
 
@@ -2278,36 +2279,47 @@ int main(int argc, char* argv[]){
     // ===== ОБРАБОТКА КОМАНД =====
     
     // === ПУШИ ===
-    if (strcmp(argv[1], "push") == 0) {
-        if (argc == 3) {
-            // push "текст"
+		if (strcmp(argv[1], "push") == 0) {
+			if (argc == 4 && strcmp(argv[2], "complete") == 0) {
+				// push complete "событие"
+        handle_complete(gw, argv[3]);
+        add_total_push(gw);
+			}
+			else if (argc == 3) {
+        // push "текст"  ИЛИ  push -fc
+        if (strcmp(argv[2], "-fc") == 0) {
+            // Специальный случай: -fc без параметров
+            handle_push(gw, argv[2], NULL, NULL);
+            add_total_push(gw);
+        } else {
+            // Обычный пуш
             handle_push(gw, NULL, argv[2], NULL);
             add_total_push(gw);
         }
-        else if (argc == 4) {
-            // push -s "стихия"  ИЛИ  push -fc  ИЛИ  push -fu "территория"
-            handle_push(gw, argv[2], NULL, argv[3]);
-            add_total_push(gw);
-        }
-        else if (argc == 5) {
-            // push -t/-c "текст" "территория/дата"
-            handle_push(gw, argv[2], argv[3], argv[4]);
-            add_total_push(gw);
-        }
-        else if (argc == 4 && strcmp(argv[2], "complete") == 0) {
-            // push complete "событие"
-            handle_complete(gw, argv[3]);
-            add_total_push(gw);
-        }
-        else {
-            printf("Неверное количество аргументов для push. Используйте ./rpg --help\n");
-            return 1;
-        }
-    }
-
+			}
+			else if (argc == 4) {
+        // push -s "стихия"  ИЛИ  push -fu "территория"
+        handle_push(gw, argv[2], NULL, argv[3]);
+        add_total_push(gw);
+			}
+			else if (argc == 5) {
+        // push -t/-c "текст" "территория/дата"
+        handle_push(gw, argv[2], argv[3], argv[4]);
+        add_total_push(gw);
+			}
+			else {
+        printf("Неверное количество аргументов для push. Используйте ./rpg --help\n");
+        return 1;
+			}
+		}
     // === БИБЛИОТЕКА ===
     else if (argc >= 2 && strcmp(argv[1], "library") == 0) {
-        if (argc >= 6 && strcmp(argv[2], "add") == 0) {
+				if (argc == 3 && strcmp(argv[2], "show") == 0) {
+					// library show
+					show_library(gw);
+					return 0;
+				}
+				else if (argc >= 6 && strcmp(argv[2], "add") == 0) {
             // library add "название" --author "автор" --pages <число>
             char* title = argv[3];
             char* author = (argc >= 8 && strcmp(argv[4], "--author") == 0) ? argv[5] : "Неизвестен";
@@ -2359,10 +2371,6 @@ int main(int argc, char* argv[]){
             check_for_custom_events(gw);
             return 0;
         }
-				else if(strcmp(argv[1], "library") == 0){
-						show_library(gw);
-						return 0;
-				}
         else {
             printf("Неизвестная команда: %s. Используйте ./rpg --help\n", argv[1]);
             return 1;
@@ -2372,9 +2380,10 @@ int main(int argc, char* argv[]){
 
     // ===== СОХРАНЕНИЕ =====
     save_user(gw);
-    save_game(gw);
     save_events(gw);
     save_library(gw);
+		save_game(gw);
+		cleanup_game(gw);
     
     return 0;
 }

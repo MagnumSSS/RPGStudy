@@ -1620,151 +1620,209 @@ void trigger_multiple_rebellion(GameWorld* gw, struct task* kingdom){
   }
 }
 
+
 bool can_capture_node(GameWorld* gw, char* title){
-	if(!gw || !title){
-		printf("Невалидные указатели gw и title в can_capture_node\n");
-		return false;
-	}
-
-	// достаю обьект (страна или город)
-	struct task* node = find_by_title(gw->world, title);
-	if(!node) return false;
-
-	cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
-	if(!territories) return false;
-
-	cJSON* obj = cJSON_GetObjectItem(territories, title);
-	if(!obj) return false;
-
-	// теперь проверяем 
-	// если город, достаем статы деревень
-	if(node->depth == 1){
-		int all_count = get_int_field(obj, "all_count_village");
-		int captured_count = get_int_field(obj, "captured_villages");
-		return (captured_count >= all_count);
-	} 
-	// если страна, достаем статы городов
-	else if(node->depth == 0){
-		int all_count = get_int_field(obj, "all_count_town");
-		int captured_count = get_int_field(obj, "captured_towns");
-		return (captured_count >= all_count);
-	}
-	
-	// если село то всегда можно
-	return true;
+    if(!gw || !title){
+        printf("Невалидные указатели gw и title в can_capture_node\n");
+        return false;
+    }
+    
+    struct task* node = find_by_title(gw->world, title);
+    if(!node) return false;
+    
+    cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
+    if(!territories) return false;
+    
+    cJSON* obj = cJSON_GetObjectItem(territories, title);
+    if(!obj) return false;
+    
+    // Проверяем по глубине
+    if(node->depth == 0) {
+        // Королевство: все регионы захвачены
+        int all_count = get_int_field(obj, "all_count_town");
+        int captured_count = get_int_field(obj, "captured_towns");
+        return (captured_count >= all_count);
+    }
+    else if(node->depth == 1) {
+        // Регион: все подрегионы захвачены
+        int all_count = get_int_field(obj, "all_count_subregions");
+        int captured_count = get_int_field(obj, "captured_subregions");
+        return (captured_count >= all_count);
+    }
+    else if(node->depth == 2) {
+        // Город: все районы захвачены
+        int all_count = get_int_field(obj, "all_count_village");
+        int captured_count = get_int_field(obj, "captured_villages");
+        return (captured_count >= all_count);
+    }
+    // depth 3 и 4 всегда можно захватывать
+    return true;
 }
 
 // обработчик для событий когда статус == "not captured" 
 void handle_prep(cJSON* obj, GameWorld* gw, char* title){
-	if(!obj){
-		printf("Не удалось получить обьект в handle_prep\n");
-		return;
-	}
-	int prep_scores = get_int_field(obj, "prep_points");
-	if(prep_scores == -1){
-		return;
-	}
-	int count_scores = get_int_field(obj, "count_scores");
-	if(count_scores == -1 || count_scores == 0){
-		return;
-	}
+    if(!obj){
+        printf("Не удалось получить обьект в handle_prep\n");
+        return;
+    }
+    
+    int prep_scores = get_int_field(obj, "prep_points");
+    if(prep_scores == -1){
+        return;
+    }
+    
+    int count_scores = get_int_field(obj, "count_scores");
+    if(count_scores == -1 || count_scores == 0){
+        return;
+    }
 
-	// проверяем можно ли в принципе захватывать объект
-	if(!can_capture_node(gw, title)){
-		printf("Нельзя захватывать %s, пока не захвачены объекты грейдом ниже\n", title);
-		return;
-	}
-	
-	prep_scores++;
-	// если захватил город
-	if(prep_scores >= count_scores){
+    // проверяем можно ли в принципе захватывать объект
+    if(!can_capture_node(gw, title)){
+        printf("Нельзя захватывать %s, пока не захвачены объекты грейдом ниже\n", title);
+        return;
+    }
+    
+    prep_scores++;
+    
+    // если захватил объект
+    if(prep_scores >= count_scores){
+        // финальная проверка перед захватом
+        if(!can_capture_node(gw, title)){
+            printf("Нельзя захватывать %s, пока не захвачены объекты грейдом ниже\n", title);
+            return;
+        }
 
-		// проверяем можно ли захватить объект(всегда смотрите что удаляете)
-		if(!can_capture_node(gw, title)){
-			printf("Нельзя захватывать %s, пока не захвачены объекты грейдом ниже\n", title);
-			return;
-		}
+        cJSON_ReplaceItemInObject(obj, "status", cJSON_CreateString("captured"));
+                            
+        // старт мятежа через n-дней
+        struct task* object_node = find_by_title(gw->world, title);
+        if(schedule_rebellion(obj, object_node)){
+            printf("Скоро начнется мятеж в %s!\n", title);
+        }
 
-		cJSON_ReplaceItemInObject(obj, "status", cJSON_CreateString("captured"));
-							
-		// старт мятежа через n-дней
-		struct task* object_node = find_by_title(gw->world, title);
-		if(schedule_rebellion(obj, object_node)){
-			printf("Скоро начнется мятеж\n");
-		}
-
-		struct task* parent = find_parent(gw->world, title);
-		if(!parent){
-			printf("Не удалось найти родителя\n");
-			return;
-		}
-		cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
-		if(!territories){
-			printf("Не удалось взять поле territories в handle_grep\n");
-			return;
-		}
-		cJSON* parent_item = cJSON_GetObjectItem(territories, parent->title);
-		if(!parent_item){
-			printf("Не удалось найти родителя в json\n");
-			return;
-		}
-		// После cJSON* parent_item = ...
-		printf("🔍 Обновление родителя:\n");
-		printf("  - Ребёнок: '%s'\n", title);
-		printf("  - Родитель найден: '%s' (depth=%d)\n", parent->title, parent->depth);
-		printf("  - Родитель в JSON: %s\n", parent_item ? "да" : "НЕТ!");
-
-		// увеличиваем колво завоеванных для города
-		if(parent->depth == 1){
-			int captured = get_int_field(parent_item, "captured_villages");
-			if(captured == -1){
-				printf("Не удалось получить количество captured_villages\n");
-				return;
-			}
-			captured++;
-			cJSON_ReplaceItemInObject(parent_item, "captured_villages", cJSON_CreateNumber(captured));
-			
-			// также увеличиваемм общее колво захваченных деревней
-			struct task* kingdom = find_parent(gw->world, parent->title);
-			if (kingdom && kingdom->depth == 0) {
-				cJSON* kingdom_item = cJSON_GetObjectItem(territories, kingdom->title);
-				if (kingdom_item) {
-					int total = get_int_field(kingdom_item, "total_captured_villages");
-          if (total != -1) {
-              cJSON_ReplaceItemInObject(kingdom_item, "total_captured_villages", 
-              cJSON_CreateNumber(total + 1));
-          }
-				}
-			}
-		}
-		// увеличиваем колво завоеванных для страны
-		else if(parent->depth == 0){
-			int captured = get_int_field(parent_item, "captured_towns");
-			if(captured == -1){
-				printf("Не удалось получить количество captured_villages\n");
-				return;
-			}
-			captured++;
-			cJSON_ReplaceItemInObject(parent_item, "captured_towns", cJSON_CreateNumber(captured));
-			
-			// если захватил все города, то множественный бунт(нужно также добавить условие для захвата -t)
-			int total = get_int_field(parent_item, "all_count_town");
-			if(total == -1){
-				printf("Не удалось получить колво all_count_town\n");
-				return;
-			}
-			if(captured == total){
-				// страна захвачена
-				printf("Сработала заглушка для множественного бунта\n");
-				trigger_multiple_rebellion(gw, parent);
-			}
-		}
-	}
-	// если еще не захватил
-	else {
-		cJSON_ReplaceItemInObject(obj, "prep_points", cJSON_CreateNumber(prep_scores));
-	}
+        // находим родителя для обновления статистики
+        struct task* parent = find_parent(gw->world, title);
+        if(!parent){
+            printf("⚠️ У объекта %s нет родителя (возможно, это королевство)\n", title);
+            return;
+        }
+        
+        cJSON* territories = cJSON_GetObjectItem(gw->progress, "territories");
+        if(!territories){
+            printf("Не удалось взять поле territories в handle_prep\n");
+            return;
+        }
+        
+        cJSON* parent_item = cJSON_GetObjectItem(territories, parent->title);
+        if(!parent_item){
+            printf("Не удалось найти родителя %s в JSON\n", parent->title);
+            return;
+        }
+        
+        // Отладочный вывод
+        printf("🔍 Обновление родителя:\n");
+        printf("  - Ребёнок: '%s' (depth=%d)\n", title, object_node->depth);
+        printf("  - Родитель: '%s' (depth=%d)\n", parent->title, parent->depth);
+        
+        // Обновляем статистику родителя в зависимости от глубины
+        // Родитель на уровне 3 (Район) → увеличиваем у города (depth=2)
+        if(parent->depth == 3){
+            int captured = get_int_field(parent_item, "captured_districts");
+            if(captured == -1){
+                printf("Не удалось получить captured_districts\n");
+                return;
+            }
+            captured++;
+            cJSON_ReplaceItemInObject(parent_item, "captured_districts", cJSON_CreateNumber(captured));
+            
+            printf("✅ Захвачен район '%s', обновлён город '%s' (%d/?)\n", 
+                   title, parent->title, captured);
+        }
+        // Родитель на уровне 2 (Город) → увеличиваем у региона (depth=1)
+        else if(parent->depth == 2){
+            int captured = get_int_field(parent_item, "captured_towns");
+            if(captured == -1){
+                printf("Не удалось получить captured_towns\n");
+                return;
+            }
+            captured++;
+            cJSON_ReplaceItemInObject(parent_item, "captured_towns", cJSON_CreateNumber(captured));
+            
+            // Также увеличиваем общее количество захваченных районов
+            struct task* region = find_parent(gw->world, parent->title);
+            if (region && region->depth == 1) {
+                cJSON* region_item = cJSON_GetObjectItem(territories, region->title);
+                if (region_item) {
+                    int total = get_int_field(region_item, "total_captured_districts");
+                    if (total != -1) {
+                        cJSON_ReplaceItemInObject(region_item, "total_captured_districts", 
+                                                  cJSON_CreateNumber(total + 1));
+                    }
+                }
+            }
+            
+            printf("✅ Захвачен город '%s', обновлён регион '%s' (%d/?)\n", 
+                   title, parent->title, captured);
+        }
+        // Родитель на уровне 1 (Регион) → увеличиваем у королевства (depth=0)
+        else if(parent->depth == 1){
+            int captured = get_int_field(parent_item, "captured_regions");
+            if(captured == -1){
+                printf("Не удалось получить captured_regions\n");
+                return;
+            }
+            captured++;
+            cJSON_ReplaceItemInObject(parent_item, "captured_regions", cJSON_CreateNumber(captured));
+            
+            // Также увеличиваем общее количество захваченных городов
+            struct task* kingdom = find_parent(gw->world, parent->title);
+            if (kingdom && kingdom->depth == 0) {
+                cJSON* kingdom_item = cJSON_GetObjectItem(territories, kingdom->title);
+                if (kingdom_item) {
+                    int total = get_int_field(kingdom_item, "total_captured_towns");
+                    if (total != -1) {
+                        cJSON_ReplaceItemInObject(kingdom_item, "total_captured_towns", 
+                                                  cJSON_CreateNumber(total + 1));
+                    }
+                }
+            }
+            
+            printf("✅ Захвачен регион '%s', обновлено королевство '%s' (%d/?)\n", 
+                   title, parent->title, captured);
+        }
+        // Родитель на уровне 0 (Королевство) → множественный бунт при полном захвате
+        else if(parent->depth == 0){
+            int captured = get_int_field(parent_item, "captured_kingdoms");
+            if(captured == -1){
+                printf("Не удалось получить captured_kingdoms\n");
+                return;
+            }
+            captured++;
+            cJSON_ReplaceItemInObject(parent_item, "captured_kingdoms", cJSON_CreateNumber(captured));
+            
+            // если захватил все регионы, то множественный бунт
+            int total = get_int_field(parent_item, "all_count_regions");
+            if(total == -1){
+                printf("Не удалось получить all_count_regions\n");
+                return;
+            }
+            
+            if(captured == total){
+                printf("🔥 Королевство %s полностью захвачено!\n", parent->title);
+                trigger_multiple_rebellion(gw, parent);
+            }
+            
+            printf("✅ Захвачено королевство '%s' (%d/%d)\n", 
+                   title, captured, total);
+        }
+    }
+    // если еще не захватил
+    else {
+        cJSON_ReplaceItemInObject(obj, "prep_points", cJSON_CreateNumber(prep_scores));
+        printf("📊 Прогресс захвата %s: %d/%d\n", title, prep_scores, count_scores);
+    }
 }
+
 
 // обработчик событий когда у объекта мятеж
 void handle_rebellion(cJSON* obj){
@@ -2120,66 +2178,62 @@ char* read_file(const char* filename){
 
 void sync_node(struct task* node, cJSON* territories) {
     if (!node) return;
-
+    
     cJSON* existing = cJSON_GetObjectItem(territories, node->title);
-    if (!existing) { 
+    if (!existing) {
         cJSON* obj = cJSON_CreateObject();
-				
+        
         // Базовые поля для всех
-				// статус города - захвачен и т.д
         cJSON_AddStringToObject(obj, "status", "not_captured");
-				// дата захвата
         cJSON_AddStringToObject(obj, "date_captured", "");
-				// дата мятежа 
         cJSON_AddStringToObject(obj, "date_rebellion", "");
-				// время захвата 
         cJSON_AddNumberToObject(obj, "time_captured", 0);
-				// очки опыта после пуша
         cJSON_AddNumberToObject(obj, "xp", 0);
-				// уровень статуса
         cJSON_AddNumberToObject(obj, "level", 0);
-				// очки подготовки к захвату(только к незахваченному d)
         cJSON_AddNumberToObject(obj, "prep_points", 0);
-
-        // Установка view и all_stages по depth
+        
+        // Установка сложности по глубине
         if (node->depth == 0) {
-						// вид обьекта
+            // Королевство - самый сложный
             cJSON_AddStringToObject(obj, "view", "KINGDOM");
-						// минимум очков 
-            cJSON_AddNumberToObject(obj, "count_scores", 12); // сложнее захватывать
-
-            // Поля королевства
-						// колво городов
+            cJSON_AddNumberToObject(obj, "count_scores", 25); // ×2.5 от базового
             cJSON_AddNumberToObject(obj, "all_count_town", element_length(node->child));
-						// колво захваченных городов
             cJSON_AddNumberToObject(obj, "captured_towns", 0);
-						// общее колво захваченных деревней
             cJSON_AddNumberToObject(obj, "total_captured_villages", 0);
-						// статус национального мятежа
             cJSON_AddBoolToObject(obj, "multiple_rebellion_kingdom", 0);
-
-        } else if (node->depth == 1) {
-						
+        } 
+        else if (node->depth == 1) {
+            // Регион/Ядро
+            cJSON_AddStringToObject(obj, "view", "REGION");
+            cJSON_AddNumberToObject(obj, "count_scores", 20); // ×2 от базового
+            cJSON_AddNumberToObject(obj, "all_count_subregions", element_length(node->child));
+            cJSON_AddNumberToObject(obj, "captured_subregions", 0);
+        }
+        else if (node->depth == 2) {
+            // Город/Системные вызовы
             cJSON_AddStringToObject(obj, "view", "TOWN");
-            cJSON_AddNumberToObject(obj, "count_scores", 8);
-
-            // Поля города
+            cJSON_AddNumberToObject(obj, "count_scores", 15); // ×1.5 от базового
             cJSON_AddNumberToObject(obj, "all_count_village", element_length(node->child));
             cJSON_AddNumberToObject(obj, "captured_villages", 0);
-
-        } else if (node->depth == 2) {
-            cJSON_AddStringToObject(obj, "view", "VILLAGE");
-            cJSON_AddNumberToObject(obj, "count_scores", 5); // проще всего
         }
-
+        else if (node->depth == 3) {
+            // Район/Категория
+            cJSON_AddStringToObject(obj, "view", "DISTRICT");
+            cJSON_AddNumberToObject(obj, "count_scores", 10); // базовый
+        }
+        else if (node->depth >= 4) {
+            // Улица/Конкретная тема
+            cJSON_AddStringToObject(obj, "view", "VILLAGE");
+            cJSON_AddNumberToObject(obj, "count_scores", 5); // самый простой
+        }
+        
         cJSON_AddItemToObject(territories, node->title, obj);
-        printf("Добавлен: %s\n", node->title);
+        printf("Добавлен: %s (depth=%d)\n", node->title, node->depth);
     }
-
+    
     sync_node(node->child, territories);
     sync_node(node->next, territories);
 }
-
 
 GameWorld* load_game_state(){
 	GameWorld* all_world = (GameWorld*)malloc(sizeof(GameWorld));

@@ -2338,28 +2338,32 @@ int main(int argc, char* argv[]){
 				// push complete "событие"
         handle_complete(gw, argv[3]);
         add_total_push(gw);
+				log_text_in_file("Завершил событие\n", argv[3]);
 			}
 			else if (argc == 3) {
         // push "текст"  ИЛИ  push -fc
         if (strcmp(argv[2], "-fc") == 0) {
-            // Специальный случай: -fc без параметров
             handle_push(gw, argv[2], NULL, NULL);
             add_total_push(gw);
+						log_text_in_file("Создал оружие\n", NULL);
         } else {
             // Обычный пуш
             handle_push(gw, NULL, argv[2], NULL);
             add_total_push(gw);
+						log_text_in_file("Что то сделал\n", NULL);
         }
 			}
 			else if (argc == 4) {
         // push -s "стихия"  ИЛИ  push -fu "территория"
         handle_push(gw, argv[2], NULL, argv[3]);
         add_total_push(gw);
+				log_text_in_file("Либо прокачал элемент либо использовал оружие на объект\n", NULL);
 			}
 			else if (argc == 5) {
         // push -t/-c "текст" "территория/дата"
         handle_push(gw, argv[2], argv[3], argv[4]);
         add_total_push(gw);
+				log_text_in_file("Либо запушил объект либо добавил ивент\n", NULL);
 			}
 			else {
         printf("Неверное количество аргументов для push. Используйте ./rpg --help\n");
@@ -2371,6 +2375,7 @@ int main(int argc, char* argv[]){
 				if (argc == 3 && strcmp(argv[2], "show") == 0) {
 					// library show
 					show_library(gw);
+					log_text_in_file("Посмотрел статус БИБЛИОТЕКИ\n", NULL);
 					return 0;
 				}
 				else if (argc >= 6 && strcmp(argv[2], "add") == 0) {
@@ -2379,12 +2384,14 @@ int main(int argc, char* argv[]){
             char* author = (argc >= 8 && strcmp(argv[4], "--author") == 0) ? argv[5] : "Неизвестен";
             int pages = (argc >= 10 && strcmp(argv[6], "--pages") == 0) ? atoi(argv[7]) : 100;
             add_book(gw, title, author, pages);
+						log_text_in_file("Добавил книгу\n", NULL);
         }
         else if (argc >= 6 && strcmp(argv[2], "read") == 0) {
             // library read "название" --pages <число>
             char* title = argv[3];
             int pages = (argc >= 6 && strcmp(argv[4], "--pages") == 0) ? atoi(argv[5]) : 10;
             read_book(gw, title, pages);
+						log_text_in_file("Немного прочитал книгу\n", NULL);
         }
         else if (argc >= 8 && strcmp(argv[2], "scroll") == 0) {
             // library scroll "название" --title "свиток" --content "текст"
@@ -2392,6 +2399,7 @@ int main(int argc, char* argv[]){
             char* scroll_title = (argc >= 6 && strcmp(argv[4], "--title") == 0) ? argv[5] : "Без названия";
             char* content = (argc >= 8 && strcmp(argv[6], "--content") == 0) ? argv[7] : "";
             create_scroll(gw, book_title, scroll_title, content);
+						log_text_in_file("Сделал свиток\n", NULL);
         }
         else {
             printf("Неверная команда library. Используйте ./rpg --help\n");
@@ -2403,26 +2411,32 @@ int main(int argc, char* argv[]){
     else if (argc == 2) {
         if (strcmp(argv[1], "status") == 0) {
             show_status(gw);
+						log_text_in_file("Посмотрел ОБЩИЙ СТАТУС \n", NULL);
             return 0;
         }
         else if (strcmp(argv[1], "kingdom") == 0) {
             show_kingdom_status(gw);
+						log_text_in_file("Посмотрел статус КОРОЛЕВСТВА\n", NULL);
             return 0;
         }
         else if (strcmp(argv[1], "forge") == 0) {
             show_forge_status(gw);
+						log_text_in_file("Посмотрел статус КУЗНИЦЫ\n", NULL);
             return 0;
         }
         else if (strcmp(argv[1], "elements") == 0) {
             show_elements_status(gw);
+						log_text_in_file("Посмотрел статус ЭЛЕМЕНТОВ\n", NULL);
             return 0;
         }
         else if (strcmp(argv[1], "rebellions") == 0) {
             show_rebellions_status(gw);
+						log_text_in_file("Посмотрел статус МЯТЕЖЕЙ\n", NULL);
             return 0;
         }
         else if (strcmp(argv[1], "events") == 0) {
             check_for_custom_events(gw);
+						log_text_in_file("Посмотрел статус ИВЕНТОВ\n", NULL);
             return 0;
         }
         else {

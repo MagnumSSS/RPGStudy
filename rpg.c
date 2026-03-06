@@ -2357,13 +2357,23 @@ int main(int argc, char* argv[]){
         // push -s "стихия"  ИЛИ  push -fu "территория"
         handle_push(gw, argv[2], NULL, argv[3]);
         add_total_push(gw);
-				log_text_in_file("Либо прокачал элемент либо использовал оружие на объект\n", NULL);
+				if(strcmp(argv[2], "-s") == 0){
+					log_text_in_file("Прокачал элемент", argv[3]);
+				}
+				else if(strcmp(argv[2], "-fu") == 0){
+					log_text_in_file("Использовал оружие на территорию", argv[3]);
+				}
 			}
 			else if (argc == 5) {
         // push -t/-c "текст" "территория/дата"
         handle_push(gw, argv[2], argv[3], argv[4]);
         add_total_push(gw);
-				log_text_in_file("Либо запушил объект либо добавил ивент\n", NULL);
+				if(strcmp(argv[2], "-t") == 0){
+					log_text_in_file("Запушил элемент", argv[4]);
+				}
+				else if(strcmp(argv[2], "-c") == 0){
+					log_text_in_file("Запустил ивент", argv[3]);
+				}
 			}
 			else {
         printf("Неверное количество аргументов для push. Используйте ./rpg --help\n");
@@ -2384,14 +2394,21 @@ int main(int argc, char* argv[]){
             char* author = (argc >= 8 && strcmp(argv[4], "--author") == 0) ? argv[5] : "Неизвестен";
             int pages = (argc >= 8 && strcmp(argv[6], "--pages") == 0) ? atoi(argv[7]) : 100;
             add_book(gw, title, author, pages);
-						log_text_in_file("Добавил книгу\n", NULL);
+						log_text_in_file("Добавил книгу", title);
         }
         else if (argc >= 6 && strcmp(argv[2], "read") == 0) {
             // library read "название" --pages <число>
             char* title = argv[3];
             int pages = (argc >= 6 && strcmp(argv[4], "--pages") == 0) ? atoi(argv[5]) : 10;
             read_book(gw, title, pages);
-						log_text_in_file("Немного прочитал книгу\n", NULL);
+						
+						char* str1 = "Немного почитал книгу";
+						char* str3 = "cтраниц(ы)"; 
+						char result_pages[100];
+						char result_book[100];
+						sprintf(result_book, "%s %s", str1, title);
+						sprintf(result_pages, "%s %s", argv[5], str3);
+						log_text_in_file(result_book, result_pages);
         }
         else if (argc >= 8 && strcmp(argv[2], "scroll") == 0) {
             // library scroll "название" --title "свиток" --content "текст"

@@ -2382,7 +2382,7 @@ int main(int argc, char* argv[]){
             // library add "название" --author "автор" --pages <число>
             char* title = argv[3];
             char* author = (argc >= 8 && strcmp(argv[4], "--author") == 0) ? argv[5] : "Неизвестен";
-            int pages = (argc >= 10 && strcmp(argv[6], "--pages") == 0) ? atoi(argv[7]) : 100;
+            int pages = (argc >= 8 && strcmp(argv[6], "--pages") == 0) ? atoi(argv[7]) : 100;
             add_book(gw, title, author, pages);
 						log_text_in_file("Добавил книгу\n", NULL);
         }
